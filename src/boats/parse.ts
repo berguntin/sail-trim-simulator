@@ -101,6 +101,8 @@ function parseOrcJson(text: string): BoatModel {
     loaM: typeof rms.LOA === 'number' ? rms.LOA : null,
     displacementKg: typeof rms.Dspl_Sailing === 'number' ? rms.Dspl_Sailing : null,
     upwindSailAreaM2: areaMain !== null && areaJib !== null ? areaMain + areaJib : null,
+    areaMainM2: areaMain,
+    areaJibM2: areaJib,
     polar,
     custom: true,
   }
@@ -191,6 +193,8 @@ function parseCsvPolar(text: string, fileName: string): BoatModel {
     loaM: null,
     displacementKg: null,
     upwindSailAreaM2: null,
+    areaMainM2: null,
+    areaJibM2: null,
     polar: {
       windSpeedsKts,
       windAnglesDeg,

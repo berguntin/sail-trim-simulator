@@ -37,6 +37,10 @@ export interface BoatModel {
   displacementKg: number | null
   /** Upwind sail area (main + jib) in m², if known */
   upwindSailAreaM2: number | null
+  /** Mainsail area in m² (ORC Area_Main), if known */
+  areaMainM2: number | null
+  /** Jib/genoa area in m² (ORC Area_Jib), if known */
+  areaJibM2: number | null
   polar: OrcPolar
   /** True for user-loaded boats (not bundled presets) */
   custom?: boolean

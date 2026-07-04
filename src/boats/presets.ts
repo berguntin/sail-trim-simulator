@@ -16,6 +16,8 @@ export const PRESET_BOATS: BoatModel[] = [
     loaM: 7.53,
     displacementKg: 1885,
     upwindSailAreaM2: 37.3,
+    areaMainM2: 19.41,
+    areaJibM2: 17.89,
     polar: {
       windSpeedsKts: [4, 6, 8, 10, 12, 14, 16, 20, 24],
       windAnglesDeg: [52, 60, 75, 90, 110, 120, 135, 150],
@@ -43,6 +45,8 @@ export const PRESET_BOATS: BoatModel[] = [
     loaM: 8.03,
     displacementKg: 1944,
     upwindSailAreaM2: 35.3,
+    areaMainM2: 21.54,
+    areaJibM2: 13.75,
     polar: {
       windSpeedsKts: [4, 6, 8, 10, 12, 14, 16, 20, 24],
       windAnglesDeg: [52, 60, 75, 90, 110, 120, 135, 150],
@@ -70,6 +74,8 @@ export const PRESET_BOATS: BoatModel[] = [
     loaM: 10.3,
     displacementKg: 6299,
     upwindSailAreaM2: 60.1,
+    areaMainM2: 31.53,
+    areaJibM2: 28.59,
     polar: {
       windSpeedsKts: [4, 6, 8, 10, 12, 14, 16, 20, 24],
       windAnglesDeg: [52, 60, 75, 90, 110, 120, 135, 150],
@@ -97,6 +103,8 @@ export const PRESET_BOATS: BoatModel[] = [
     loaM: 10.6,
     displacementKg: 5733,
     upwindSailAreaM2: 74.8,
+    areaMainM2: 41.81,
+    areaJibM2: 32.95,
     polar: {
       windSpeedsKts: [4, 6, 8, 10, 12, 14, 16, 20, 24],
       windAnglesDeg: [52, 60, 75, 90, 110, 120, 135, 150],
@@ -124,6 +132,8 @@ export const PRESET_BOATS: BoatModel[] = [
     loaM: 10.64,
     displacementKg: 6362,
     upwindSailAreaM2: 67.3,
+    areaMainM2: 40.02,
+    areaJibM2: 27.27,
     polar: {
       windSpeedsKts: [4, 6, 8, 10, 12, 14, 16, 20, 24],
       windAnglesDeg: [52, 60, 75, 90, 110, 120, 135, 150],
@@ -151,6 +161,8 @@ export const PRESET_BOATS: BoatModel[] = [
     loaM: 12.96,
     displacementKg: 8931,
     upwindSailAreaM2: 111.6,
+    areaMainM2: 62.03,
+    areaJibM2: 49.56,
     polar: {
       windSpeedsKts: [4, 6, 8, 10, 12, 14, 16, 20, 24],
       windAnglesDeg: [52, 60, 75, 90, 110, 120, 135, 150],

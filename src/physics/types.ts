@@ -70,6 +70,16 @@ export interface BoatTuning {
    * Derived from the boat's polar (see boats/polar.ts boatTuning).
    */
   heelComfortFrac: number
+  /**
+   * Main's share of upwind sail area (main + jib), 0-1 — the weight used to
+   * combine the two sails' coefficients into rig totals. Exact from the ORC
+   * certificate areas when available (see boats/rig.ts deriveRig).
+   */
+  mainAreaFrac: number
+  /** Induced-drag aspect ratio (span²/area) of the mainsail (boats/rig.ts). */
+  mainAspectRatio: number
+  /** Induced-drag aspect ratio of the jib/genoa (boats/rig.ts). */
+  genoaAspectRatio: number
 }
 
 export interface PerformanceEstimate {

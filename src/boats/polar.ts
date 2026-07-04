@@ -168,7 +168,7 @@ export function powerSaturation(polar: OrcPolar): number {
  * speed where the optimizer starts flattening ranges ~13 kts (Platu 25) to
  * ~18 kts (Swan 42).
  */
-export function boatTuning(polar: OrcPolar): BoatTuning {
+export function boatTuning(polar: OrcPolar): Pick<BoatTuning, 'heelComfortFrac'> {
   const sat = powerSaturation(polar)
   const frac = 0.30 + ((sat - 0.10) / 0.12) * 0.20
   return { heelComfortFrac: Math.min(0.52, Math.max(0.28, frac)) }

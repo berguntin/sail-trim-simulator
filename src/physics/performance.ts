@@ -37,7 +37,13 @@ import type {
 } from './types'
 import { computeSailShape } from './sailShape'
 import { computeGenoaShape } from './genoaShape'
-import { computeAeroCoefficients, applyGenoaBlanketing, GENOA_AERO } from './aerodynamics'
+import {
+  computeAeroCoefficients,
+  applyGenoaBlanketing,
+  MAINSAIL_AERO,
+  GENOA_AERO,
+  type SailAeroParams,
+} from './aerodynamics'
 
 // ---------------------------------------------------------------------------
 // Drive / heel force decomposition
@@ -93,8 +99,22 @@ function computeRelativeHeel(aero: AeroCoefficients, wind: WindState): number {
  * Per-boat tuning (boats/polar.ts) replaces this with a value derived from
  * the boat's ORC polar: ~0.30 for a tender sportboat that must depower
  * early, up to ~0.50 for a stiff keelboat that carries power longer.
+ *
+ * The rig fields default to the historical fixed values; per-boat values
+ * come from the certificate's sail areas (boats/rig.ts deriveRig).
  */
-export const DEFAULT_TUNING: BoatTuning = { heelComfortFrac: 0.40 }
+export const DEFAULT_TUNING: BoatTuning = {
+  heelComfortFrac: 0.40,
+  mainAreaFrac: 0.55,
+  mainAspectRatio: MAINSAIL_AERO.aspectRatio,
+  genoaAspectRatio: GENOA_AERO.aspectRatio,
+}
+
+/** Fill missing tuning fields with the defaults — callers may tune only the
+ *  heel comfort (boats/polar.ts) or only the rig (boats/rig.ts). */
+function resolveTuning(tuning: Partial<BoatTuning>): BoatTuning {
+  return { ...DEFAULT_TUNING, ...tuning }
+}
 
 /** Quadratic penalty gain past the comfort limit. */
 const HEEL_PENALTY_GAIN = 8.0
@@ -113,14 +133,14 @@ const HEEL_PENALTY_GAIN = 8.0
 export function trimScore(
   aero: AeroCoefficients,
   wind: WindState,
-  tuning: BoatTuning = DEFAULT_TUNING,
+  tuning: Partial<BoatTuning> = DEFAULT_TUNING,
 ): number {
   const { driveCoef } = computeDriveHeel(aero, wind)
   const q = (wind.trueWindSpeedKts / 25) ** 2 // normalised dynamic pressure
   const driveForce = driveCoef * q
 
   const heelFrac = computeRelativeHeel(aero, wind) / 100
-  const excess = Math.max(0, heelFrac - tuning.heelComfortFrac)
+  const excess = Math.max(0, heelFrac - (tuning.heelComfortFrac ?? DEFAULT_TUNING.heelComfortFrac))
 
   return driveForce - HEEL_PENALTY_GAIN * excess * excess
 }
@@ -130,14 +150,13 @@ export function trimScore(
 // ---------------------------------------------------------------------------
 
 /**
- * Sail-area fractions for combining the two sails' coefficients into rig
- * totals. A typical fractional cruiser-racer sail plan upwind carries
- * slightly more area in the main than in the genoa (ORC certificates for
- * the preset fleet give main ≈ 52-60 % of upwind cloth). Fixed fractions —
- * qualitative, like everything downstream of them.
+ * Default main share of upwind sail area. A typical fractional
+ * cruiser-racer sail plan upwind carries slightly more area in the main
+ * than in the genoa (ORC certificates for the preset fleet give main
+ * ≈ 52-60 % of upwind cloth). Per-boat values come from the certificate
+ * areas via tuning.mainAreaFrac.
  */
 export const MAIN_AREA_FRAC = 0.55
-export const GENOA_AREA_FRAC = 0.45
 
 /**
  * Area-weighted rig coefficients. Deliberately first-order: no slot bonus.
@@ -150,24 +169,40 @@ export const GENOA_AREA_FRAC = 0.45
 export function combineRigAero(
   main: AeroCoefficients,
   genoa: AeroCoefficients,
+  mainFrac: number = MAIN_AREA_FRAC,
 ): AeroCoefficients {
-  const cl = main.cl * MAIN_AREA_FRAC + genoa.cl * GENOA_AREA_FRAC
-  const cd = main.cd * MAIN_AREA_FRAC + genoa.cd * GENOA_AREA_FRAC
+  const genoaFrac = 1 - mainFrac
+  const cl = main.cl * mainFrac + genoa.cl * genoaFrac
+  const cd = main.cd * mainFrac + genoa.cd * genoaFrac
   return { cl, cd, efficiency: cd > 0 ? cl / cd : 0 }
+}
+
+/** Induced-drag params per sail: boat-specific aspect ratio from the tuning,
+ *  Oswald factors fixed per sail (boom end-plate vs deck-sweeping foot). */
+export function mainAeroParams(tuning: BoatTuning): SailAeroParams {
+  return { aspectRatio: tuning.mainAspectRatio, oswald: MAINSAIL_AERO.oswald }
+}
+export function genoaAeroParams(tuning: BoatTuning): SailAeroParams {
+  return { aspectRatio: tuning.genoaAspectRatio, oswald: GENOA_AERO.oswald }
 }
 
 /** Genoa aero for a given genoa trim + backstay (forestay tension) + wind,
  *  including the main's blanketing on deep courses. */
-function genoaAeroFor(genoa: GenoaControls, backstay: number, wind: WindState): AeroCoefficients {
+function genoaAeroFor(
+  genoa: GenoaControls,
+  backstay: number,
+  wind: WindState,
+  tuning: BoatTuning,
+): AeroCoefficients {
   return applyGenoaBlanketing(
-    computeAeroCoefficients(computeGenoaShape(genoa, backstay, wind), wind, GENOA_AERO),
+    computeAeroCoefficients(computeGenoaShape(genoa, backstay, wind), wind, genoaAeroParams(tuning)),
     wind,
   )
 }
 
 /** Main aero for a given main trim + wind. */
-function mainAeroFor(main: TrimControls, wind: WindState): AeroCoefficients {
-  return computeAeroCoefficients(computeSailShape(main, wind), wind)
+function mainAeroFor(main: TrimControls, wind: WindState, tuning: BoatTuning): AeroCoefficients {
+  return computeAeroCoefficients(computeSailShape(main, wind), wind, mainAeroParams(tuning))
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +244,10 @@ interface RigGridResult {
 const _gridCache = new Map<string, RigGridResult>()
 
 function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): RigGridResult {
-  const key = `${Math.round(wind.trueWindSpeedKts)}|${wind.apparentWindAngleDeg.toFixed(1)}|${tuning.heelComfortFrac.toFixed(3)}`
+  const key =
+    `${Math.round(wind.trueWindSpeedKts)}|${wind.apparentWindAngleDeg.toFixed(1)}` +
+    `|${tuning.heelComfortFrac.toFixed(3)}|${tuning.mainAreaFrac.toFixed(3)}` +
+    `|${tuning.mainAspectRatio.toFixed(2)}|${tuning.genoaAspectRatio.toFixed(2)}`
   const cached = _gridCache.get(key)
   if (cached) return cached
 
@@ -222,7 +260,7 @@ function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): Ri
     // with the backstay (forestay sag), so precompute it per backstay step.
     const genoaAeroByBackstay = new Map<number, AeroCoefficients>()
     for (const backstay of STEPS) {
-      genoaAeroByBackstay.set(backstay, genoaAeroFor(bestGenoa, backstay, wind))
+      genoaAeroByBackstay.set(backstay, genoaAeroFor(bestGenoa, backstay, wind, tuning))
     }
 
     for (const mainsheet of STEPS) {
@@ -232,8 +270,8 @@ function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): Ri
             const genoaAero = genoaAeroByBackstay.get(backstay)!
             for (const outhaul of OUTHAUL_STEPS) {
               const controls = { mainsheet, traveler, cunningham, backstay, outhaul }
-              const aero = mainAeroFor(controls, wind)
-              const score = trimScore(combineRigAero(aero, genoaAero), wind, tuning)
+              const aero = mainAeroFor(controls, wind, tuning)
+              const score = trimScore(combineRigAero(aero, genoaAero, tuning.mainAreaFrac), wind, tuning)
               if (score > maxScore) {
                 maxScore = score
                 bestMain = controls
@@ -245,13 +283,13 @@ function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): Ri
     }
 
     // --- Genoa sweep, main held.
-    const mainAero = mainAeroFor(bestMain, wind)
+    const mainAero = mainAeroFor(bestMain, wind, tuning)
     for (const jibsheet of STEPS) {
       for (const car of STEPS) {
         for (const halyard of HALYARD_STEPS) {
           const genoa = { jibsheet, car, halyard }
-          const genoaAero = genoaAeroFor(genoa, bestMain.backstay, wind)
-          const score = trimScore(combineRigAero(mainAero, genoaAero), wind, tuning)
+          const genoaAero = genoaAeroFor(genoa, bestMain.backstay, wind, tuning)
+          const score = trimScore(combineRigAero(mainAero, genoaAero, tuning.mainAreaFrac), wind, tuning)
           if (score > maxScore) {
             maxScore = score
             bestGenoa = genoa
@@ -262,8 +300,9 @@ function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): Ri
   }
 
   const optimalAero = combineRigAero(
-    mainAeroFor(bestMain, wind),
-    genoaAeroFor(bestGenoa, bestMain.backstay, wind),
+    mainAeroFor(bestMain, wind, tuning),
+    genoaAeroFor(bestGenoa, bestMain.backstay, wind, tuning),
+    tuning.mainAreaFrac,
   )
   const result: RigGridResult = {
     maxScore,
@@ -286,9 +325,9 @@ function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): Ri
  */
 export function findOptimalRig(
   wind: WindState,
-  tuning: BoatTuning = DEFAULT_TUNING,
+  tuning: Partial<BoatTuning> = DEFAULT_TUNING,
 ): OptimalRig {
-  return rigGridSearch(wind, tuning).best
+  return rigGridSearch(wind, resolveTuning(tuning)).best
 }
 
 // ---------------------------------------------------------------------------
@@ -333,11 +372,12 @@ export function estimateRigPerformance(
   mainAero: AeroCoefficients,
   genoaAero: AeroCoefficients,
   wind: WindState,
-  tuning: BoatTuning = DEFAULT_TUNING,
+  tuning: Partial<BoatTuning> = DEFAULT_TUNING,
 ): PerformanceEstimate {
-  const grid = rigGridSearch(wind, tuning)
-  const combined = combineRigAero(mainAero, genoaAero)
-  const score = trimScore(combined, wind, tuning)
+  const t = resolveTuning(tuning)
+  const grid = rigGridSearch(wind, t)
+  const combined = combineRigAero(mainAero, genoaAero, t.mainAreaFrac)
+  const score = trimScore(combined, wind, t)
 
   const relativeVMG = grid.maxScore > 0
     ? Math.max(0, Math.min(100, (score / grid.maxScore) * 100))
