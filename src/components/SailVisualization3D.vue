@@ -46,9 +46,14 @@ import type { SailShape } from '../physics/types'
 
 // ---------------------------------------------------------------------------
 // Sail geometry constants (metres — arbitrary scale for visual)
+//
+// The mast height and foretriangle base are the fixed scene scale; the foot
+// chords vary per boat (store.rig, from the ORC certificate's sail areas):
+// a high-aspect racing main reads skinnier than a cruiser's, and the genoa
+// clew overlaps the mast as far as the certificate areas suggest.
 // ---------------------------------------------------------------------------
 const LUFF_HEIGHT  = 10    // mast height
-const CHORD_FOOT   = 4.5   // boom length
+const CHORD_FOOT   = 4.5   // boom length at the default rig proportions
 const CHORD_HEAD   = 1.0   // sail width at masthead
 const ROACH        = 0.55  // extra leech curve beyond the straight taper
 
@@ -56,7 +61,6 @@ const ROACH        = 0.55  // extra leech curve beyond the straight taper
 const J_LENGTH         = 3.6   // mast → stem head (bow) distance
 const TACK_Y           = 0.15  // genoa tack just above the deck
 const HOUNDS_FRAC      = 0.85  // forestay attachment height on the mast (fractional rig)
-const GENOA_CHORD_FOOT = 4.6   // LP ≈ 128 % of J → the clew overlaps past the mast
 const GENOA_CHORD_HEAD = 0.12
 const GENOA_HOLLOW     = 0.18  // slight hollow in the leech (no battens, no roach)
 // The head (puño de driza) stops short of the hounds — the halyard covers the
@@ -77,6 +81,17 @@ const TWIST_VIS = 1.6
 
 const store = useTrimStore()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+
+// Boat-specific proportions (boats/rig.ts) — read at geometry-build time so a
+// boat change only needs an update pass, not a scene rebuild.
+/** Main foot chord: shorter for a high-aspect racing main, longer for a cruiser. */
+function mainChordFoot(): number {
+  return CHORD_FOOT * store.rig.mainChordScale
+}
+/** Genoa foot chord from the boat's overlap: LP = overlap × J. */
+function genoaChordFoot(): number {
+  return J_LENGTH * store.rig.genoaOverlapRatio
+}
 
 // ---------------------------------------------------------------------------
 // Three.js objects (module-level so cleanup can reach them)
@@ -132,7 +147,8 @@ const MAX_CLEW_SLIDE = 0.35
  * the lower chords — the freed cloth is what deepens the foot (footFullness).
  */
 function chordLength(u: number): number {
-  const straight = CHORD_FOOT + (CHORD_HEAD - CHORD_FOOT) * u
+  const foot = mainChordFoot()
+  const straight = foot + (CHORD_HEAD - foot) * u
   const clewSlide = MAX_CLEW_SLIDE * (1 - store.controls.outhaul / 100) * footBlend(u)
   return straight + ROACH * Math.sin(Math.PI * Math.pow(u, 1.35)) - clewSlide
 }
@@ -314,7 +330,7 @@ function updateMast() {
   if (backstayLine) {
     backstayLine.geometry.setFromPoints([
       new THREE.Vector3(mastBendAt(1), LUFF_HEIGHT + 0.4, 0),
-      new THREE.Vector3(CHORD_FOOT * 1.25, 0, 0),
+      new THREE.Vector3(mainChordFoot() * 1.25, 0, 0),
     ])
     backstayLine.geometry.attributes.position.needsUpdate = true
   }
@@ -387,18 +403,25 @@ function updateLeechLine() {
 
 const BOOM_Y   = 1.1                   // gooseneck height: boom clears the deck hardware
                                        // (genoa track, traveler) under the main's foot
-const BOOM_LEN = CHORD_FOOT + 0.3      // spar extends past the clew at full outhaul
+const BOOM_LEN_BASE = CHORD_FOOT + 0.3 // spar length at default proportions (mesh is scaled)
 const TRACK_X  = 3.9                   // traveler track position on deck (aft)
 const TRACK_HALF = 1.0                 // half-width of the traveler track
+
+/** Boom length follows the boat's foot chord: extends past the clew at full outhaul. */
+function boomLen(): number {
+  return mainChordFoot() + 0.3
+}
 
 function updateBoom() {
   if (!boom) return
   const shape = store.sailShape
   const a = sectionAngleRad(0, shape)
   const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a))
+  const len = boomLen()
   boom.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
-  boom.position.set(dir.x * BOOM_LEN / 2, BOOM_Y, dir.z * BOOM_LEN / 2)
-  boomEndFitting.position.set(dir.x * BOOM_LEN, BOOM_Y, dir.z * BOOM_LEN)
+  boom.scale.setY(len / BOOM_LEN_BASE) // cylinder axis is y before the quaternion
+  boom.position.set(dir.x * len / 2, BOOM_Y, dir.z * len / 2)
+  boomEndFitting.position.set(dir.x * len, BOOM_Y, dir.z * len)
 
   // Outhaul (pajarín): clew → boom-end fitting. Easing it slides the clew
   // forward along the spar (chordLength), so this line reads the setting.
@@ -406,13 +429,13 @@ function updateBoom() {
   clew.y = BOOM_Y + 0.06
   outhaulLine.geometry.setFromPoints([
     clew,
-    new THREE.Vector3(dir.x * BOOM_LEN, BOOM_Y + 0.05, dir.z * BOOM_LEN),
+    new THREE.Vector3(dir.x * len, BOOM_Y + 0.05, dir.z * len),
   ])
 
   // Mainsheet: from the aft end of the boom down to the traveler car,
   // which slides to windward (−z) / leeward (+z) with the traveler control.
   const sheetAttach = new THREE.Vector3(
-    dir.x * CHORD_FOOT * 0.92, BOOM_Y - 0.07, dir.z * CHORD_FOOT * 0.92)
+    dir.x * mainChordFoot() * 0.92, BOOM_Y - 0.07, dir.z * mainChordFoot() * 0.92)
   const carZ = -(store.controls.traveler / 50) * TRACK_HALF
   travelerCar.position.set(TRACK_X, 0.06, carZ)
   mainsheetLine.geometry.setFromPoints([
@@ -460,7 +483,8 @@ function genoaLuffPoint(u: number): THREE.Vector3 {
 
 /** Chord at height u: straight taper with a slight leech hollow (no roach). */
 function genoaChordLength(u: number): number {
-  const straight = GENOA_CHORD_FOOT + (GENOA_CHORD_HEAD - GENOA_CHORD_FOOT) * u
+  const foot = genoaChordFoot()
+  const straight = foot + (GENOA_CHORD_HEAD - foot) * u
   return straight - GENOA_HOLLOW * Math.sin(Math.PI * u)
 }
 
@@ -965,7 +989,7 @@ function initScene(canvas: HTMLCanvasElement) {
   backstayLine = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(mastBendAt(1), LUFF_HEIGHT + 0.4, 0),
-      new THREE.Vector3(CHORD_FOOT * 1.25, 0, 0),
+      new THREE.Vector3(mainChordFoot() * 1.25, 0, 0),
     ]),
     new THREE.LineBasicMaterial({ color: 0x8899aa, transparent: true, opacity: 0.7 }),
   )
@@ -975,7 +999,7 @@ function initScene(canvas: HTMLCanvasElement) {
   // rigging that trims it: outhaul line and mainsheet → traveler car.
   // Everything except the gooseneck and track follows the trim in updateBoom.
   const boomMat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, metalness: 0.5, roughness: 0.5 })
-  boom = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.075, BOOM_LEN, 12), boomMat)
+  boom = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.075, BOOM_LEN_BASE, 12), boomMat)
   boom.castShadow = true
   scene.add(boom)
 
@@ -1210,6 +1234,15 @@ watch(
 watch(
   () => store.trueWindAngleDeg,
   () => updateWindArrows(),
+)
+
+// Boat change: rig proportions (chords, overlap, boom) come from store.rig
+watch(
+  () => store.boat.id,
+  () => {
+    updateSailGeometry()
+    updateGenoaGeometry()
+  },
 )
 </script>
 

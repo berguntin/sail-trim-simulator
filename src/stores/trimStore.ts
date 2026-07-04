@@ -3,10 +3,17 @@ import { ref, computed, watch } from 'vue'
 import type { TrimControls, GenoaControls, WindState } from '../physics/types'
 import { computeSailShape } from '../physics/sailShape'
 import { computeGenoaShape } from '../physics/genoaShape'
-import { computeAeroCoefficients, applyGenoaBlanketing, GENOA_AERO } from '../physics/aerodynamics'
-import { estimateRigPerformance, findOptimalRig, combineRigAero } from '../physics/performance'
+import { computeAeroCoefficients, applyGenoaBlanketing } from '../physics/aerodynamics'
+import {
+  estimateRigPerformance,
+  findOptimalRig,
+  combineRigAero,
+  mainAeroParams,
+  genoaAeroParams,
+} from '../physics/performance'
 import type { BoatModel } from '../boats/types'
 import { PRESET_BOATS, DEFAULT_BOAT_ID } from '../boats/presets'
+import { deriveRig } from '../boats/rig'
 import {
   boatTuning,
   beatAngleDeg,
@@ -43,11 +50,24 @@ export const useTrimStore = defineStore('trim', () => {
   )
 
   /**
-   * Physics tuning derived from the selected boat's polar — this is what
-   * makes trim behaviour boat-specific: a tender sportboat's optimal trim
-   * depowers at a wind speed where a stiff keelboat still wants full power.
+   * Rig proportions from the boat's certificate data: the main's real share
+   * of upwind area, estimated aspect ratios, and the visual proportions the
+   * 3D view reads (genoa overlap, main chord scale).
    */
-  const tuning = computed(() => boatTuning(boat.value.polar))
+  const rig = computed(() => deriveRig(boat.value))
+
+  /**
+   * Physics tuning derived from the selected boat's polar and rig — this is
+   * what makes trim behaviour boat-specific: a tender sportboat's optimal
+   * trim depowers at a wind speed where a stiff keelboat still wants full
+   * power, and a blade-jib racer weights its main more than a genoa cruiser.
+   */
+  const tuning = computed(() => ({
+    ...boatTuning(boat.value.polar),
+    mainAreaFrac: rig.value.mainAreaFrac,
+    mainAspectRatio: rig.value.mainAspectRatio,
+    genoaAspectRatio: rig.value.genoaAspectRatio,
+  }))
 
   function selectBoat(id: string) {
     const found = availableBoats.value.find((b) => b.id === id)
@@ -105,7 +125,9 @@ export const useTrimStore = defineStore('trim', () => {
   // -------------------------------------------------------------------------
 
   const sailShape = computed(() => computeSailShape(controls.value, wind.value))
-  const aero = computed(() => computeAeroCoefficients(sailShape.value, wind.value))
+  const aero = computed(() =>
+    computeAeroCoefficients(sailShape.value, wind.value, mainAeroParams(tuning.value)),
+  )
 
   // Genoa: forestay tension comes from the backstay — one control, two sails
   const genoaShape = computed(() =>
@@ -115,13 +137,15 @@ export const useTrimStore = defineStore('trim', () => {
   // and the optimal button must see the same genoa force downwind.
   const genoaAero = computed(() =>
     applyGenoaBlanketing(
-      computeAeroCoefficients(genoaShape.value, wind.value, GENOA_AERO),
+      computeAeroCoefficients(genoaShape.value, wind.value, genoaAeroParams(tuning.value)),
       wind.value,
     ),
   )
 
   /** Area-weighted rig totals (what the coefficient bars display). */
-  const rigAero = computed(() => combineRigAero(aero.value, genoaAero.value))
+  const rigAero = computed(() =>
+    combineRigAero(aero.value, genoaAero.value, tuning.value.mainAreaFrac),
+  )
 
   const performance = computed(() =>
     estimateRigPerformance(aero.value, genoaAero.value, wind.value, tuning.value),
@@ -179,6 +203,7 @@ export const useTrimStore = defineStore('trim', () => {
     boat,
     customBoats,
     availableBoats,
+    rig,
     tuning,
     sailShape,
     genoaShape,
