@@ -1380,4 +1380,43 @@ h2 {
 .dot-leech    { background: #f5f0dc; }
 .dot-twa      { background: #5ddc96; }
 .dot-awa      { background: #9fd4ff; }
+
+/* Mobile: the canvas fills the available height instead of a fixed ratio,
+ * and the heavier overlays get out of the model's way. */
+@media (max-width: 768px) {
+  .viz3d {
+    height: 100%;
+    min-height: 0;
+    padding: 0.45rem;
+    gap: 0;
+    border-radius: 0;
+  }
+
+  .viz3d h2 {
+    display: none;
+  }
+
+  .canvas-wrap {
+    aspect-ratio: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .overlay-legend,
+  .overlay-hint {
+    display: none;
+  }
+
+  .overlay-stats {
+    top: 6px;
+    left: 6px;
+    gap: 0.5rem;
+    font-size: 0.62rem;
+    padding: 3px 7px;
+  }
+
+  .overlay-stats-genoa {
+    top: 30px;
+  }
+}
 </style>

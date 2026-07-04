@@ -75,3 +75,20 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
   border: 2px solid var(--color-bg);
 }
+
+/* Touch devices: fatter track and thumb so sliders are usable with a finger */
+@media (max-width: 768px), (pointer: coarse) {
+  input[type="range"] {
+    height: 6px;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+}
