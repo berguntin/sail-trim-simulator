@@ -1,0 +1,77 @@
+/* CSS custom properties — dark nautical theme */
+:root {
+  --color-bg:          #0d1520;
+  --color-panel:       #141e2e;
+  --color-border:      #1e304a;
+  --color-text:        #d8e8f4;
+  --color-label:       #7a9bb8;
+  --color-hint:        #4a6a88;
+  --color-accent:      #4fc3f7;
+  --color-wind:        #a5d6a7;
+  --color-sea:         #0a1826;
+  --color-sail-fill:   rgba(200, 220, 255, 0.18);
+  --color-sail-stroke: #90bfe0;
+  --color-camber:      #f0c04888;
+  --color-draft:       #ff9966;
+  --color-twist:       #bb99ee;
+  --color-genoa:       #6688aa;
+  --color-centreline:  #3a5a7a;
+  --color-boat:        #2a4a6a;
+  --color-bar-track:   #1e304a;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* Range input reset */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-bar-track);
+  border-radius: 4px;
+  height: 4px;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+  border: 2px solid var(--color-bg);
+  box-shadow: 0 0 4px rgba(79, 195, 247, 0.4);
+}
+
+input[type="range"].wind-slider::-webkit-slider-thumb {
+  background: var(--color-wind);
+  box-shadow: 0 0 4px rgba(165, 214, 167, 0.4);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+  border: 2px solid var(--color-bg);
+}
