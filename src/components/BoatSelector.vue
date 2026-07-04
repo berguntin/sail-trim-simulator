@@ -2,10 +2,29 @@
 import { ref, computed } from 'vue'
 import { useTrimStore } from '../stores/trimStore'
 import { parseBoatFile } from '../boats/parse'
+import { fetchBoatBySailNo } from '../boats/orcApi'
 
 const store = useTrimStore()
 const fileError = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+const orcSailNo = ref('')
+const orcLoading = ref(false)
+const orcError = ref<string | null>(null)
+
+async function onLoadFromOrc() {
+  if (orcLoading.value) return
+  orcError.value = null
+  orcLoading.value = true
+  try {
+    store.addCustomBoat(await fetchBoatBySailNo(orcSailNo.value))
+    orcSailNo.value = ''
+  } catch (err) {
+    orcError.value = err instanceof Error ? err.message : 'Could not load boat from ORC'
+  } finally {
+    orcLoading.value = false
+  }
+}
 
 function onSelect(event: Event) {
   store.selectBoat((event.target as HTMLSelectElement).value)
@@ -56,6 +75,22 @@ const specs = computed(() => {
     <p class="boat-desc">{{ store.boat.description }}</p>
     <p v-if="specs" class="boat-specs">{{ specs }}</p>
     <p class="boat-source" :title="store.boat.source">{{ store.boat.source }}</p>
+
+    <form class="orc-search" @submit.prevent="onLoadFromOrc">
+      <input
+        v-model="orcSailNo"
+        type="text"
+        class="orc-input"
+        placeholder="Sail number, e.g. ESP-7352"
+        :disabled="orcLoading"
+        aria-label="Sail number"
+      />
+      <button class="btn-load btn-orc" type="submit" :disabled="orcLoading">
+        {{ orcLoading ? 'Loading…' : 'Load from ORC' }}
+      </button>
+    </form>
+    <span class="hint">Fetches the active certificate from data.orc.org</span>
+    <p v-if="orcError" class="file-error">{{ orcError }}</p>
 
     <button class="btn-load" @click="fileInput?.click()">Load your own polar…</button>
     <input
@@ -142,6 +177,37 @@ h2 {
 
 .file-hidden {
   display: none;
+}
+
+.orc-search {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.orc-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.orc-input::placeholder {
+  color: var(--color-hint);
+}
+
+.btn-orc {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.btn-orc:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .hint {
