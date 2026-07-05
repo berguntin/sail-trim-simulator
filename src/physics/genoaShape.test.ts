@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeGenoaShape } from './genoaShape'
+import { computeGenoaShape, GENOA_MIN_SHEET_ANGLE_DEG } from './genoaShape'
 import type { GenoaControls, WindState } from './types'
 
 const DEFAULT_WIND: WindState = { trueWindSpeedKts: 12, apparentWindAngleDeg: 30 }
@@ -28,6 +28,18 @@ describe('genoaShape — angle of attack', () => {
     const fwd = computeGenoaShape({ ...NEUTRAL_CONTROLS, car: 0 }, MID_BACKSTAY, DEFAULT_WIND)
     const aft = computeGenoaShape({ ...NEUTRAL_CONTROLS, car: 100 }, MID_BACKSTAY, DEFAULT_WIND)
     expect(fwd.angleOfAttackDeg).toBe(aft.angleOfAttackDeg)
+  })
+
+  it('winching hard can never rotate the chord inside the lead-track line', () => {
+    // The clew hangs on the sheet: a rope pulls, it cannot push the sail
+    // inboard past the car. Chord angle off centreline = AWA − AoA must
+    // stay at or outside the track's sheeting angle however hard you trim.
+    for (const awa of [20, 25, 30, 40]) {
+      const wind: WindState = { trueWindSpeedKts: 12, apparentWindAngleDeg: awa }
+      const hard = computeGenoaShape(
+        { ...NEUTRAL_CONTROLS, jibsheet: 100, car: 0 }, MID_BACKSTAY, wind)
+      expect(awa - hard.angleOfAttackDeg).toBeGreaterThanOrEqual(GENOA_MIN_SHEET_ANGLE_DEG)
+    }
   })
 })
 

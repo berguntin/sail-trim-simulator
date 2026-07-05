@@ -42,6 +42,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { useTrimStore } from '../stores/trimStore'
 import { computeLocalFlow } from '../physics/aerodynamics'
+import { GENOA_MIN_SHEET_ANGLE_DEG } from '../physics/genoaShape'
 import type { SailShape } from '../physics/types'
 
 // ---------------------------------------------------------------------------
@@ -496,14 +497,19 @@ function genoaChordLength(u: number): number {
 }
 
 /**
- * Clew height above the tack. The lead car sets it: car forward, the sheet
- * pulls the clew down hard (leech tension) and holds it low; car aft, the
- * pull goes flat along the foot and the unloaded leech lets the clew ride
- * up — the visual cue every jib-trim guide draws next to its lead table.
+ * Clew height above the tack. The lead car sets the base: car forward, the
+ * sheet pulls the clew down hard (leech tension) and holds it low; car aft,
+ * the pull goes flat along the foot and the unloaded leech lets the clew
+ * ride up — the visual cue every jib-trim guide draws next to its lead
+ * table. Sheet tension stacks on top: winching in drags the clew down
+ * toward the car, easing lets it fly up (the first inch of a flogging
+ * clew is always UP).
  */
 function genoaClewRise(): number {
   const t = store.genoaControls.car / 100
-  return GENOA_CLEW_RISE_MIN + (GENOA_CLEW_RISE_MAX - GENOA_CLEW_RISE_MIN) * t
+  const base = GENOA_CLEW_RISE_MIN + (GENOA_CLEW_RISE_MAX - GENOA_CLEW_RISE_MIN) * t
+  const sheetPull = (store.genoaControls.jibsheet / 100 - 0.5) * 0.16
+  return base - sheetPull
 }
 
 /**
@@ -656,12 +662,23 @@ function houndsPoint(): THREE.Vector3 {
 // clew's neutral position (a lead forward of the clew would push, not pull)
 // and runs aft from there. Per-boat: a 145 % genoa sheets much further aft
 // than a blade jib, so the track follows the boat's overlap.
-const JIB_TRACK_Z   = 1.15
 const JIB_TRACK_LEN = 2.2
 
 /** Forward end of the lead track: just aft of the clew at its neutral trim. */
 function jibTrackX0(): number {
   return -J_LENGTH + genoaChordFoot() * 0.96 + 0.15
+}
+
+/**
+ * Lateral (athwartships) position of the track: ON the sheeting line the
+ * physics enforces — the chord can rotate inboard until the clew sits
+ * exactly over the track (AoA capped at AWA − GENOA_MIN_SHEET_ANGLE), and
+ * no further. Deriving the track z from the same angle keeps the picture
+ * honest: fully winched in, the sheet goes vertical and the clew never
+ * crosses inside the lead line (a rope can pull, not push).
+ */
+function jibTrackZ(): number {
+  return genoaChordFoot() * Math.sin((GENOA_MIN_SHEET_ANGLE_DEG * Math.PI) / 180)
 }
 
 function initGenoa() {
@@ -811,17 +828,18 @@ function updateGenoaGeometry() {
   // flat pull (foot tension) with it aft — which is the whole point of the
   // control, so the two-segment routing has to be visible.
   const x0 = jibTrackX0()
-  jibTrack.position.set(x0 + JIB_TRACK_LEN / 2, 0.03, JIB_TRACK_Z)
+  const trackZ = jibTrackZ()
+  jibTrack.position.set(x0 + JIB_TRACK_LEN / 2, 0.03, trackZ)
 
   const clew = genoaPoint(0, 1, store.genoaShape).pos
   const carX = x0 + (store.genoaControls.car / 100) * JIB_TRACK_LEN
-  jibCar.position.set(carX, 0.06, JIB_TRACK_Z)
+  jibCar.position.set(carX, 0.06, trackZ)
 
-  const winch = new THREE.Vector3(x0 + JIB_TRACK_LEN + 0.9, 0.08, 0.95)
+  const winch = new THREE.Vector3(x0 + JIB_TRACK_LEN + 0.9, 0.08, trackZ - 0.15)
   jibWinch.position.copy(winch)
   jibSheetLine.geometry.setFromPoints([
     clew,
-    new THREE.Vector3(carX, 0.11, JIB_TRACK_Z),
+    new THREE.Vector3(carX, 0.11, trackZ),
     new THREE.Vector3(winch.x, winch.y + 0.08, winch.z),
   ])
 }

@@ -47,6 +47,19 @@ function norm(value: number): number {
 export const MAX_GENOA_SHEET_ANGLE_DEG = 80
 
 /**
+ * Inboard sheeting limit: the clew is pinned (laterally) on the line down
+ * to the lead car, so the chord can never rotate closer to the centreline
+ * than the track's sheeting angle — a sheet can pull, not push. Winching
+ * past that point stops rotating the sail and only tensions the leech,
+ * which is why an over-sheeted jib shows a closed, hooked leech instead of
+ * a boom-style over-rotation (the main has no such limit: its traveler
+ * can drag the boom through centreline). ~8-10° on an inboard-tracked
+ * racer, ~15° on a cruiser; we use 13° to match the deck layout drawn by
+ * the 3D view, which places the track on this same line.
+ */
+export const GENOA_MIN_SHEET_ANGLE_DEG = 13
+
+/**
  * Compute effective angle of attack (AoA) of the genoa vs. apparent wind.
  *
  * Primary (and only) driver: jib sheet.
@@ -61,7 +74,10 @@ export const MAX_GENOA_SHEET_ANGLE_DEG = 80
  * and raises its effective AoA — the reason the jib can be sheeted closer to
  * centreline without luffing. (Source: Gentry, "The Origins of Lift" and the
  * slot-effect essays.) Off the wind the sheeting limit binds, exactly like
- * the main's boom limit.
+ * the main's boom limit; hard on the wind the INBOARD limit binds instead —
+ * the chord can never point inside the lead-track line, so max AoA is
+ * AWA − GENOA_MIN_SHEET_ANGLE (winching harder past that only closes the
+ * leech — see computeTwist).
  */
 function computeAngleOfAttack(controls: GenoaControls, wind: WindState): number {
   const { jibsheet } = controls
@@ -81,7 +97,7 @@ function computeAngleOfAttack(controls: GenoaControls, wind: WindState): number 
   return clamp(
     aoa,
     Math.max(2, apparentWindAngleDeg - MAX_GENOA_SHEET_ANGLE_DEG),
-    Math.min(90, apparentWindAngleDeg + 5),
+    Math.min(90, Math.max(2, apparentWindAngleDeg - GENOA_MIN_SHEET_ANGLE_DEG)),
   )
 }
 
