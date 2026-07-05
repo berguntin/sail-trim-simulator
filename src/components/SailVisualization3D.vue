@@ -63,6 +63,11 @@ const TACK_Y           = 0.15  // genoa tack just above the deck
 const HOUNDS_FRAC      = 0.85  // forestay attachment height on the mast (fractional rig)
 const GENOA_CHORD_HEAD = 0.12
 const GENOA_HOLLOW     = 0.18  // slight hollow in the leech (no battens, no roach)
+// The genoa foot rises from the tack to a clew well above the deck (real
+// genoas only sweep the deck near the tack). The clew rides higher when the
+// lead car goes aft: the flatter sheet pull stops holding the leech down.
+const GENOA_CLEW_RISE_MIN = 0.40  // clew height above the tack, car full forward
+const GENOA_CLEW_RISE_MAX = 0.62  // car full aft: leech unloaded, clew lifts
 // The head (puño de driza) stops short of the hounds — the halyard covers the
 // rest of the stay. Halyard tension stretches the luff toward the sheave.
 const GENOA_HEAD_FRAC_MIN = 0.90   // eased halyard: head hangs lower
@@ -118,7 +123,9 @@ let forestayLine: THREE.Line
 let genoaHalyardLine: THREE.Line
 let genoaHeadShackle: THREE.Mesh
 let genoaHeadPatchGeo: THREE.BufferGeometry
+let jibTrack: THREE.Mesh
 let jibCar: THREE.Mesh
+let jibWinch: THREE.Mesh
 let jibSheetLine: THREE.Line
 let animId: number
 let resizeObserver: ResizeObserver
@@ -489,6 +496,26 @@ function genoaChordLength(u: number): number {
 }
 
 /**
+ * Clew height above the tack. The lead car sets it: car forward, the sheet
+ * pulls the clew down hard (leech tension) and holds it low; car aft, the
+ * pull goes flat along the foot and the unloaded leech lets the clew ride
+ * up — the visual cue every jib-trim guide draws next to its lead table.
+ */
+function genoaClewRise(): number {
+  const t = store.genoaControls.car / 100
+  return GENOA_CLEW_RISE_MIN + (GENOA_CLEW_RISE_MAX - GENOA_CLEW_RISE_MIN) * t
+}
+
+/**
+ * Vertical rise of the sail toward the clew: zero along the luff (v = 0),
+ * full at the clew (v = 1, u = 0), fading with height as the leech blends
+ * into the straight taper. Only the foot region actually lifts.
+ */
+function genoaFootRise(u: number, v: number): number {
+  return genoaClewRise() * Math.pow(v, 1.3) * (1 - u) ** 2
+}
+
+/**
  * Section angle of the genoa at height u — same convention as the main:
  * chord flies at (AWA − AoA) off the centreline, twist opens the upper
  * sections a further twist·u degrees to leeward (TWIST_VIS on screen only).
@@ -528,7 +555,7 @@ function genoaPoint(u: number, v: number, shape: SailShape): {
   return {
     pos: new THREE.Vector3(
       luff.x + chordPos * cosA - camberMag * sinA,
-      luff.y,
+      luff.y + genoaFootRise(u, v),
       chordPos * sinA + camberMag * cosA + sagZ,
     ),
     flowDir: new THREE.Vector3(cosA, 0, sinA),
@@ -624,10 +651,18 @@ function houndsPoint(): THREE.Vector3 {
   return new THREE.Vector3(mastBendAt(HOUNDS_FRAC), HOUNDS_FRAC * LUFF_HEIGHT, 0)
 }
 
-// Jib lead track on the leeward side deck; the car slides fore/aft
+// Jib lead track on the leeward side deck; the car slides fore/aft. The
+// track lives where the sheet can actually work: it STARTS just aft of the
+// clew's neutral position (a lead forward of the clew would push, not pull)
+// and runs aft from there. Per-boat: a 145 % genoa sheets much further aft
+// than a blade jib, so the track follows the boat's overlap.
 const JIB_TRACK_Z   = 1.15
-const JIB_TRACK_X0  = 0.2
-const JIB_TRACK_LEN = 2.4
+const JIB_TRACK_LEN = 2.2
+
+/** Forward end of the lead track: just aft of the clew at its neutral trim. */
+function jibTrackX0(): number {
+  return -J_LENGTH + genoaChordFoot() * 0.96 + 0.15
+}
 
 function initGenoa() {
   genoaGeo = new THREE.BufferGeometry()
@@ -717,11 +752,12 @@ function initGenoa() {
   )
   scene.add(headPatch)
 
-  // Lead track + car + sheet, mirroring the traveler/mainsheet hardware
+  // Lead track + car + sheet + winch, mirroring the traveler/mainsheet
+  // hardware. Track and winch positions follow the boat's overlap, so they
+  // are (re)placed in updateGenoaGeometry, not here.
   const hardwareMat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, metalness: 0.5, roughness: 0.5 })
-  const jibTrack = new THREE.Mesh(
+  jibTrack = new THREE.Mesh(
     new THREE.BoxGeometry(JIB_TRACK_LEN + 0.2, 0.05, 0.07), hardwareMat)
-  jibTrack.position.set(JIB_TRACK_X0 + JIB_TRACK_LEN / 2, 0.03, JIB_TRACK_Z)
   scene.add(jibTrack)
 
   jibCar = new THREE.Mesh(
@@ -729,6 +765,12 @@ function initGenoa() {
     new THREE.MeshStandardMaterial({ color: 0x38404c, metalness: 0.3, roughness: 0.6 }),
   )
   scene.add(jibCar)
+
+  jibWinch = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.09, 0.16, 14),
+    new THREE.MeshStandardMaterial({ color: 0x8a8f98, metalness: 0.7, roughness: 0.35 }),
+  )
+  scene.add(jibWinch)
 
   jibSheetLine = new THREE.Line(
     new THREE.BufferGeometry(),
@@ -763,13 +805,24 @@ function updateGenoaGeometry() {
   genoaHeadPatchGeo.attributes.position.needsUpdate = true
   genoaHeadPatchGeo.computeVertexNormals()
 
-  // Sheet: clew → lead car; the car slides fore/aft with the car control
+  // Sheet lead: the sheet leaves the clew, turns DOWN-AND-AFT through the
+  // car block, then runs aft to the primary winch. The car position changes
+  // the clew→car angle — steep pull (leech tension) with the car forward,
+  // flat pull (foot tension) with it aft — which is the whole point of the
+  // control, so the two-segment routing has to be visible.
+  const x0 = jibTrackX0()
+  jibTrack.position.set(x0 + JIB_TRACK_LEN / 2, 0.03, JIB_TRACK_Z)
+
   const clew = genoaPoint(0, 1, store.genoaShape).pos
-  const carX = JIB_TRACK_X0 + (store.genoaControls.car / 100) * JIB_TRACK_LEN
+  const carX = x0 + (store.genoaControls.car / 100) * JIB_TRACK_LEN
   jibCar.position.set(carX, 0.06, JIB_TRACK_Z)
+
+  const winch = new THREE.Vector3(x0 + JIB_TRACK_LEN + 0.9, 0.08, 0.95)
+  jibWinch.position.copy(winch)
   jibSheetLine.geometry.setFromPoints([
     clew,
-    new THREE.Vector3(carX, 0.10, JIB_TRACK_Z),
+    new THREE.Vector3(carX, 0.11, JIB_TRACK_Z),
+    new THREE.Vector3(winch.x, winch.y + 0.08, winch.z),
   ])
 }
 
