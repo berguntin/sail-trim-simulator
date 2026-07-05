@@ -129,6 +129,45 @@ function baseCl(angleOfAttackDeg: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Effective camber — vertical depth distribution
+// ---------------------------------------------------------------------------
+
+/**
+ * Share of the sail area whose depth follows the foot controls (outhaul on
+ * the main, lead car on the genoa): the lower third carries the longest
+ * chords (≈ 5/9 of a triangular sail's area), moderated by the same
+ * boom-to-mid-height blend the 3D view draws — net ≈ 35 % of the cloth.
+ *
+ * The weight differs slightly for lift and drag. The foot region works in
+ * the worst air on the sail — the bottom of the wind gradient, behind
+ * mast/boom turbulence, with the open shelf running at high local depth
+ * where the leeward flow separates readily — so depth added at the foot
+ * converts to lift a touch below its area share (0.35) and to drag a touch
+ * above it (0.40). The asymmetry is deliberately mild: strong enough that
+ * when the heel limit binds, boarding the foot flat is the best
+ * drag-and-heel-shed per unit of drive lost (the outhaul is the FIRST
+ * depowering step), yet weak enough that below the limit a full foot still
+ * pays (eased outhaul = cheap power in light air). That flip at the
+ * overpowering point is the trim-guide ordering. (North U Trim Guide,
+ * outhaul/lead chapters; Speed & Smarts outhaul tables. Previously
+ * footFullnessRatio was drawn but generated no force at all, which let the
+ * optimizer recommend a fully eased outhaul at 20+ kts.)
+ */
+const FOOT_LIFT_WEIGHT = 0.35
+const FOOT_DRAG_WEIGHT = 0.40
+
+/** Camber the lift model sees: mid/upper camber (mast bend, luff tension,
+ *  stay sag) with the foot-controlled share scaled by footFullnessRatio. */
+export function camberForLift(shape: SailShape): number {
+  return shape.camberRatio * (1 + FOOT_LIFT_WEIGHT * (shape.footFullnessRatio - 1))
+}
+
+/** Camber the profile-drag model sees — foot depth weighs heavier here. */
+export function camberForDrag(shape: SailShape): number {
+  return shape.camberRatio * (1 + FOOT_DRAG_WEIGHT * (shape.footFullnessRatio - 1))
+}
+
+// ---------------------------------------------------------------------------
 // Camber contribution to Cl
 // ---------------------------------------------------------------------------
 
@@ -196,25 +235,35 @@ function twistPenaltyFactor(twistDeg: number, trueWindSpeedKts: number): number 
  *  end-plate effect of the boom. Cdi is the dominant drag source upwind.
  */
 function computeCd(shape: SailShape, cl: number, params: SailAeroParams): number {
-  const { camberRatio, draftPositionRatio, angleOfAttackDeg } = shape
+  const { draftPositionRatio, angleOfAttackDeg } = shape
+  const camber = camberForDrag(shape)
 
   // Profile drag baseline
   let cd0 = 0.015
 
   // Camber penalty: optimal range 0.08-0.12; excess adds drag
   const CAMBER_OPT = 0.10
-  if (camberRatio > CAMBER_OPT) {
-    cd0 += (camberRatio - CAMBER_OPT) * 0.6  // +0.006 per 0.01 excess camber
-  } else if (camberRatio < CAMBER_OPT) {
+  if (camber > CAMBER_OPT) {
+    cd0 += (camber - CAMBER_OPT) * 0.6  // +0.006 per 0.01 excess camber
+  } else if (camber < CAMBER_OPT) {
     // A flat sail costs lift, not drag — only a token friction term here.
     // (Flattening is the correct heavy-air response; the price is paid in Cl.)
-    cd0 += (CAMBER_OPT - camberRatio) * 0.05
+    cd0 += (CAMBER_OPT - camber) * 0.05
   }
 
   // Draft position penalty: optimal 0.40-0.50; aft draft ↑ leech drag
   const DRAFT_OPT = 0.45
   const draftDeviation = Math.abs(draftPositionRatio - DRAFT_OPT)
   cd0 += draftDeviation * 0.12
+
+  // Open-shelf drag: foot cloth fuller than the boarded-flat shape rounds
+  // the lower leech and, opened further, becomes a shape discontinuity —
+  // the shelf seam runs a separated pocket and the bulge squeezes the slot
+  // against the genoa. Quadratic from just below neutral so a slightly
+  // eased foot is nearly free (light-air power) but a fully open shelf
+  // costs real drag — no one sails upwind in a breeze with the shelf open —
+  // and boarding the foot out flat is always worth a token drag saving.
+  cd0 += 0.20 * Math.max(0, shape.footFullnessRatio - 0.9) ** 2
 
   // Separation drag: grows quadratically from 12° AoA toward stall, capped
   // at the flat-plate pressure-drag ceiling (CN·sin²α ≈ 1.2 square to the
@@ -317,7 +366,7 @@ export function computeAeroCoefficients(
   wind: WindState,
   params: SailAeroParams = MAINSAIL_AERO,
 ): AeroCoefficients {
-  const clBase = baseCl(shape.angleOfAttackDeg) + camberClDelta(shape.camberRatio)
+  const clBase = baseCl(shape.angleOfAttackDeg) + camberClDelta(camberForLift(shape))
   const twistFactor = twistPenaltyFactor(shape.twistDeg, wind.trueWindSpeedKts)
   const cl = clamp(clBase * twistFactor, 0, 2.0)
 

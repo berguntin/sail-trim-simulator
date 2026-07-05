@@ -93,10 +93,14 @@ describe('sailShape — camber', () => {
     expect(fullCunn.camberRatio).toBeLessThanOrEqual(noCunn.camberRatio)
   })
 
-  it('outhaul tension reduces mean camber', () => {
+  it('outhaul leaves the mid/upper camber alone — its depth lives in footFullness', () => {
+    // The aero folds footFullnessRatio into the effective camber
+    // (aerodynamics camberForLift/camberForDrag); feeding the outhaul into
+    // camberRatio as well double-counted it in the 3D view and made it a
+    // weak duplicate of the backstay.
     const eased = computeSailShape({ ...NEUTRAL_CONTROLS, outhaul: 0 }, DEFAULT_WIND)
     const tensioned = computeSailShape({ ...NEUTRAL_CONTROLS, outhaul: 100 }, DEFAULT_WIND)
-    expect(tensioned.camberRatio).toBeLessThan(eased.camberRatio)
+    expect(tensioned.camberRatio).toBe(eased.camberRatio)
   })
 })
 

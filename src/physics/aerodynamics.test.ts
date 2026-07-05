@@ -6,6 +6,8 @@ import {
   computeLocalFlow,
   genoaBlanketFactor,
   applyGenoaBlanketing,
+  camberForLift,
+  camberForDrag,
   MAINSAIL_AERO,
   GENOA_AERO,
 } from './aerodynamics'
@@ -57,6 +59,31 @@ describe('aerodynamics — Cl vs camber (power)', () => {
     const full = computeAeroCoefficients(makeShape({ camberRatio: 0.15 }), DEFAULT_WIND)
     expect(medium.cl).toBeGreaterThan(flat.cl)
     expect(full.cl).toBeGreaterThan(medium.cl)
+  })
+})
+
+describe('aerodynamics — foot fullness (outhaul / lead car)', () => {
+  it('a fuller foot adds lift, a boarded-out foot sheds it', () => {
+    const open = computeAeroCoefficients(makeShape({ footFullnessRatio: 1.3 }), DEFAULT_WIND)
+    const neutral = computeAeroCoefficients(makeShape({ footFullnessRatio: 1.0 }), DEFAULT_WIND)
+    const flat = computeAeroCoefficients(makeShape({ footFullnessRatio: 0.7 }), DEFAULT_WIND)
+    expect(open.cl).toBeGreaterThan(neutral.cl)
+    expect(neutral.cl).toBeGreaterThan(flat.cl)
+  })
+
+  it('an open shelf costs drag; boarding the foot flat sheds it', () => {
+    const open = computeAeroCoefficients(makeShape({ footFullnessRatio: 1.3 }), DEFAULT_WIND)
+    const neutral = computeAeroCoefficients(makeShape({ footFullnessRatio: 1.0 }), DEFAULT_WIND)
+    const flat = computeAeroCoefficients(makeShape({ footFullnessRatio: 0.7 }), DEFAULT_WIND)
+    expect(open.cd).toBeGreaterThan(neutral.cd)
+    expect(flat.cd).toBeLessThan(neutral.cd)
+  })
+
+  it('foot depth converts to drag above its lift share — flattening it is the cheap depower', () => {
+    const shape = makeShape({ footFullnessRatio: 1.3 })
+    const liftGain = camberForLift(shape) / shape.camberRatio
+    const dragGain = camberForDrag(shape) / shape.camberRatio
+    expect(dragGain).toBeGreaterThan(liftGain)
   })
 })
 

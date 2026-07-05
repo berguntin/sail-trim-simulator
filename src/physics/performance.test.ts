@@ -107,9 +107,10 @@ describe('performance — relativeVMG', () => {
   it('in heavy air, excessive power costs VMG (heel penalty)', () => {
     const wind = windAt(25)
     // Fully powered (high cl) vs a depowered rig: powered heels far past
-    // the comfort limit at 25 kts and must score lower.
+    // the comfort limit at 25 kts and must score lower. (cl 0.6 ≈ what the
+    // optimizer actually carries at 24 kts — cl 0.9 is still overpowered.)
     const powered = perfOf(makeAero(1.5, 0.15), wind)
-    const depowered = perfOf(makeAero(0.9, 0.08), wind)
+    const depowered = perfOf(makeAero(0.6, 0.06), wind)
     expect(depowered.relativeVMG).toBeGreaterThan(powered.relativeVMG)
   })
 })
@@ -229,13 +230,71 @@ describe('performance — findOptimalRig realism', () => {
     }
   })
 
-  it('optimal heel grows with wind speed', () => {
+  it('optimal heel grows with wind until powered up, then the crew holds it', () => {
     const heels = [6, 12, 18, 25].map((kts) => {
       const wind = windAt(kts)
       return computeRelativeHeel(rigAeroFor(findOptimalRig(wind), wind), wind)
     })
-    for (let i = 1; i < heels.length; i++) {
-      expect(heels[i]).toBeGreaterThan(heels[i - 1])
+    // Below the depower point more wind = more heel…
+    expect(heels[1]).toBeGreaterThan(heels[0])
+    expect(heels[2]).toBeGreaterThan(heels[1])
+    // …past it, depowering holds heel roughly constant (rail down, not more)
+    expect(heels[3]).toBeGreaterThan(heels[2] * 0.85)
+    expect(heels[3]).toBeLessThan(heels[2] * 1.15)
+  })
+})
+
+describe('performance — findOptimalRig follows the trim-guide progression', () => {
+  // Regression suite for the "eased outhaul at 21 kts" bug: the optimal
+  // trims must follow the ordering every trim guide teaches. Bands, not
+  // exact grid values, so legitimate retuning has room to move.
+
+  it('light-to-medium air: outhaul carries shape but the shelf is never fully open upwind', () => {
+    for (const kts of [6, 10, 14]) {
+      const { main } = findOptimalRig(windAt(kts))
+      expect(main.outhaul).toBeGreaterThanOrEqual(25)
+      expect(main.outhaul).toBeLessThanOrEqual(75)
+    }
+  })
+
+  it('in a breeze the outhaul goes tight — the first depowering step', () => {
+    for (const kts of [18, 21, 24]) {
+      expect(findOptimalRig(windAt(kts)).main.outhaul).toBeGreaterThanOrEqual(75)
+    }
+  })
+
+  it('the outhaul boards flat before the backstay comes on hard', () => {
+    const main = findOptimalRig(windAt(18)).main
+    expect(main.outhaul).toBe(100)
+    expect(main.backstay).toBeLessThanOrEqual(37.5)
+  })
+
+  it('backstay comes on progressively as the breeze builds', () => {
+    const backstayAt = (kts: number) => findOptimalRig(windAt(kts)).main.backstay
+    expect(backstayAt(12)).toBe(0)
+    expect(backstayAt(21)).toBeGreaterThanOrEqual(50)
+    expect(backstayAt(24)).toBeGreaterThanOrEqual(backstayAt(21))
+  })
+
+  it('traveler drops as the wind builds', () => {
+    const travelerAt = (kts: number) => findOptimalRig(windAt(kts)).main.traveler
+    expect(travelerAt(8)).toBeGreaterThanOrEqual(12.5)
+    expect(travelerAt(24)).toBeLessThanOrEqual(-12.5)
+  })
+
+  it('genoa: the car moves aft and the halyard tension rises in a breeze', () => {
+    const light = findOptimalRig(windAt(8)).genoa
+    const breeze = findOptimalRig(windAt(21)).genoa
+    expect(breeze.car).toBeGreaterThan(light.car)
+    expect(breeze.halyard).toBeGreaterThanOrEqual(light.halyard)
+  })
+
+  it('in a breeze the optimum holds heel just under the comfort limit', () => {
+    for (const kts of [18, 21, 24]) {
+      const wind = windAt(kts)
+      const heel = computeRelativeHeel(rigAeroFor(findOptimalRig(wind), wind), wind)
+      expect(heel).toBeGreaterThanOrEqual(28) // powered, rail working
+      expect(heel).toBeLessThanOrEqual(40)    // never past the comfort limit
     }
   })
 })

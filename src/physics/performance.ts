@@ -116,19 +116,37 @@ function resolveTuning(tuning: Partial<BoatTuning>): BoatTuning {
   return { ...DEFAULT_TUNING, ...tuning }
 }
 
-/** Quadratic penalty gain past the comfort limit. */
-const HEEL_PENALTY_GAIN = 8.0
+/**
+ * The heel penalty ramps up QUADRATICALLY starting this far BELOW the
+ * comfort limit, so the marginal cost of heeling force is already non-zero
+ * when the limit is reached (slope 2·GAIN·RAMP = 2.0 there).
+ *
+ * Why the ramp matters: a penalty that starts exactly AT the limit has zero
+ * slope at the boundary, so the optimizer parks the rig a hair under the
+ * limit where lift is still free — and claws power back with the worst
+ * possible cloth (the "eased outhaul at 21 kts" bug: full foot, mast
+ * cranked). With the ramp, shedding lift starts to pay while approaching
+ * the limit (upwind break-even slope ≈ tanβ·(MAX_HEEL_FORCE/25²) ≈ 0.85,
+ * comfortably below 2.0), the depowering is gradual from a couple of knots
+ * before the limit — exactly how a real crew works — and the flattening
+ * happens with the most drag-efficient cloth first (foot flat before the
+ * upper sail goes flat).
+ */
+const HEEL_RAMP = 0.10
+const HEEL_PENALTY_GAIN = 10.0
 
 /**
- * VMG proxy: drive force scaled by dynamic pressure, minus a quadratic
- * penalty once heeling force exceeds the comfort limit.
+ * VMG proxy: drive force scaled by dynamic pressure, minus a penalty as
+ * heeling force approaches and passes the comfort limit.
  *
  * In light air the penalty term is zero (heel force is tiny even fully
  * powered), so the score reduces to "maximise drive". In heavy air the
- * penalty dominates and rewards depowering. Both regimes emerge from the
- * same formula — no special cases. The boat only enters through
- * tuning.heelComfortFrac: the same trim depowers a sportboat at a wind
- * speed where a stiff keelboat still wants full power.
+ * penalty dominates and rewards depowering — the optimum holds heel roughly
+ * constant just under the limit as the wind builds (rail down, feathering),
+ * which is exactly how a crewed keelboat sails a breeze. Both regimes
+ * emerge from the same formula — no special cases. The boat only enters
+ * through tuning.heelComfortFrac: the same trim depowers a sportboat at a
+ * wind speed where a stiff keelboat still wants full power.
  */
 export function trimScore(
   aero: AeroCoefficients,
@@ -140,7 +158,8 @@ export function trimScore(
   const driveForce = driveCoef * q
 
   const heelFrac = computeRelativeHeel(aero, wind) / 100
-  const excess = Math.max(0, heelFrac - (tuning.heelComfortFrac ?? DEFAULT_TUNING.heelComfortFrac))
+  const comfort = tuning.heelComfortFrac ?? DEFAULT_TUNING.heelComfortFrac
+  const excess = Math.max(0, heelFrac - (comfort - HEEL_RAMP))
 
   return driveForce - HEEL_PENALTY_GAIN * excess * excess
 }

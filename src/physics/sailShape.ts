@@ -172,14 +172,16 @@ function computeTwist(controls: TrimControls, wind: WindState): number {
  *  secondary — mainly ~0.02 reduction across full range. (Source: Speed &
  *  Smarts — "cunningham primarily moves draft, secondarily flattens slightly.")
  *
- * Secondary driver: outhaul.
- *  The outhaul owns the depth of the LOWER third (see computeFootFullness);
- *  its contribution to the MEAN camber is worth about ±0.02 around the mid
- *  setting. (Source: North U — "outhaul controls lower-sail depth; above
- *  mid-height its effect disappears.")
+ * NOT a driver: outhaul.
+ *  camberRatio is the MID/UPPER camber. The outhaul owns the depth of the
+ *  LOWER third through footFullnessRatio (computeFootFullness below); the
+ *  aerodynamics fold that into the area-weighted effectiveCamber, and the
+ *  3D view scales the lower chords with it. Feeding the outhaul into
+ *  camberRatio as well (as this function once did) counted it twice in the
+ *  visualization and made it a weak duplicate of the backstay in the aero.
  */
 function computeCamber(controls: TrimControls): number {
-  const { backstay, cunningham, outhaul } = controls
+  const { backstay, cunningham } = controls
 
   // Backstay: maps 0-100 → 0.15 (full) to 0.06 (flat), linear
   const camberFromBackstay = 0.15 - norm(backstay) * 0.09
@@ -187,10 +189,7 @@ function computeCamber(controls: TrimControls): number {
   // Cunningham secondary flattening: max −0.02
   const cunninghamEffect = norm(cunningham) * 0.02
 
-  // Outhaul: ±0.02 on the mean, centered at the mid setting
-  const outhaulEffect = (norm(outhaul) - 0.5) * 0.04
-
-  const camber = camberFromBackstay - cunninghamEffect - outhaulEffect
+  const camber = camberFromBackstay - cunninghamEffect
   return clamp(camber, 0.05, 0.18)
 }
 
