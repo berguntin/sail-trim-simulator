@@ -1,88 +1,35 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { useTrimStore } from '../stores/trimStore'
 
+const { t } = useI18n()
 const store = useTrimStore()
 
 interface SliderDef {
-  label: string
   key: 'mainsheet' | 'traveler' | 'cunningham' | 'backstay' | 'outhaul'
   min: number
   max: number
   step: number
   unit: string
-  hint: string
 }
 
 interface GenoaSliderDef {
-  label: string
   key: 'jibsheet' | 'car' | 'halyard'
-  hint: string
 }
 
+// Labels and hints live in the locale files under trim.sliders.<key>
 const sliders: SliderDef[] = [
-  {
-    label: 'Mainsheet',
-    key: 'mainsheet',
-    min: 0,
-    max: 100,
-    step: 1,
-    unit: '%',
-    hint: 'Controls twist (primary) and leech tension',
-  },
-  {
-    label: 'Traveler',
-    key: 'traveler',
-    min: -50,
-    max: 50,
-    step: 1,
-    unit: '',
-    hint: 'Controls angle of attack without changing leech tension',
-  },
-  {
-    label: 'Outhaul (pajarín)',
-    key: 'outhaul',
-    min: 0,
-    max: 100,
-    step: 1,
-    unit: '%',
-    hint: 'Foot tension: flattens the lower third of the sail',
-  },
-  {
-    label: 'Cunningham',
-    key: 'cunningham',
-    min: 0,
-    max: 100,
-    step: 1,
-    unit: '%',
-    hint: 'Moves draft forward; slightly flattens the sail',
-  },
-  {
-    label: 'Backstay',
-    key: 'backstay',
-    min: 0,
-    max: 100,
-    step: 1,
-    unit: '%',
-    hint: 'Bends mast → flattens sail and opens upper leech',
-  },
+  { key: 'mainsheet', min: 0, max: 100, step: 1, unit: '%' },
+  { key: 'traveler', min: -50, max: 50, step: 1, unit: '' },
+  { key: 'outhaul', min: 0, max: 100, step: 1, unit: '%' },
+  { key: 'cunningham', min: 0, max: 100, step: 1, unit: '%' },
+  { key: 'backstay', min: 0, max: 100, step: 1, unit: '%' },
 ]
 
 const genoaSliders: GenoaSliderDef[] = [
-  {
-    label: 'Jib sheet (escota)',
-    key: 'jibsheet',
-    hint: 'Primary genoa control: angle of attack and leech twist',
-  },
-  {
-    label: 'Lead car (carro)',
-    key: 'car',
-    hint: 'Forward = closed leech, full foot; aft = open leech, flat foot',
-  },
-  {
-    label: 'Halyard (driza)',
-    key: 'halyard',
-    hint: 'Luff tension: moves the genoa draft forward',
-  },
+  { key: 'jibsheet' },
+  { key: 'car' },
+  { key: 'halyard' },
 ]
 
 function onChange(key: SliderDef['key'], event: Event) {
@@ -107,28 +54,33 @@ function onCourseChange(event: Event) {
 
 /** Point of sail for the current course, for the TWA slider label. */
 function pointOfSail(twa: number): string {
-  if (twa <= store.targets.beatAngleDeg + 3) return 'close-hauled (ceñida)'
-  if (twa < 80) return 'close reach'
-  if (twa <= 105) return 'beam reach (través)'
-  if (twa < 145) return 'broad reach (largo)'
-  return 'run (popa)'
+  if (twa <= store.targets.beatAngleDeg + 3) return t('trim.pointOfSail.closeHauled')
+  if (twa < 80) return t('trim.pointOfSail.closeReach')
+  if (twa <= 105) return t('trim.pointOfSail.beamReach')
+  if (twa < 145) return t('trim.pointOfSail.broadReach')
+  return t('trim.pointOfSail.run')
 }
 
 function travelerLabel(v: number): string {
-  if (v > 5) return `+${v} ▲ windward`
-  if (v < -5) return `${v} ▼ leeward`
-  return `${v} centered`
+  if (v > 5) return t('trim.traveler.windward', { v })
+  if (v < -5) return t('trim.traveler.leeward', { v })
+  return t('trim.traveler.centered', { v })
+}
+
+/** Display name of the selected headsail, e.g. "Génova 119%". */
+function headsailName(): string {
+  return `${t(`headsail.kind.${store.headsail.kind}`)} ${store.headsail.lpPct}%`
 }
 </script>
 
 <template>
   <section class="trim-controls">
-    <h2>Trim Controls</h2>
+    <h2>{{ t('trim.heading') }}</h2>
 
     <div class="control-group wind-group">
       <label class="control-label">
-        <span class="label-name">True Wind Speed</span>
-        <span class="label-value">{{ store.wind.trueWindSpeedKts.toFixed(0) }} kts</span>
+        <span class="label-name">{{ t('trim.trueWindSpeed') }}</span>
+        <span class="label-value">{{ store.wind.trueWindSpeedKts.toFixed(0) }} {{ t('trim.kts') }}</span>
       </label>
       <input
         type="range"
@@ -143,7 +95,7 @@ function travelerLabel(v: number): string {
 
     <div class="control-group wind-group">
       <label class="control-label">
-        <span class="label-name">Course (TWA)</span>
+        <span class="label-name">{{ t('trim.course') }}</span>
         <span class="label-value">{{ store.trueWindAngleDeg.toFixed(0) }}°</span>
       </label>
       <input
@@ -156,15 +108,15 @@ function travelerLabel(v: number): string {
         class="slider wind-slider"
       />
       <span class="hint">
-        {{ pointOfSail(store.trueWindAngleDeg) }} · AWA ≈ {{ store.wind.apparentWindAngleDeg.toFixed(1) }}°
+        {{ pointOfSail(store.trueWindAngleDeg) }} · {{ t('trim.awa', { deg: store.wind.apparentWindAngleDeg.toFixed(1) }) }}
       </span>
     </div>
 
     <div class="optimal-row">
       <button class="btn-optimal" @click="store.applyOptimalTrim()">
-        Show Optimal Trim
+        {{ t('trim.showOptimal') }}
       </button>
-      <div class="proximity-bar-wrap" title="How close current trim is to the optimum">
+      <div class="proximity-bar-wrap" :title="t('trim.proximityTitle')">
         <div
           class="proximity-bar"
           :style="{ width: `${store.optimalProximity * 100}%` }"
@@ -174,15 +126,15 @@ function travelerLabel(v: number): string {
             'prox-high': store.optimalProximity >= 0.85,
           }"
         />
-        <span class="proximity-label">{{ Math.round(store.optimalProximity * 100) }}% of optimum</span>
+        <span class="proximity-label">{{ t('trim.ofOptimum', { pct: Math.round(store.optimalProximity * 100) }) }}</span>
       </div>
     </div>
 
-    <h3 class="sail-heading">Mainsail</h3>
+    <h3 class="sail-heading">{{ t('trim.mainsail') }}</h3>
 
     <div v-for="s in sliders" :key="s.key" class="control-group">
       <label class="control-label">
-        <span class="label-name">{{ s.label }}</span>
+        <span class="label-name">{{ t(`trim.sliders.${s.key}.label`) }}</span>
         <span class="label-value">
           <template v-if="s.key === 'traveler'">
             {{ travelerLabel(store.controls[s.key]) }}
@@ -202,14 +154,14 @@ function travelerLabel(v: number): string {
         class="slider"
         :class="s.key"
       />
-      <span class="hint">{{ s.hint }}</span>
+      <span class="hint">{{ t(`trim.sliders.${s.key}.hint`) }}</span>
     </div>
 
-    <h3 class="sail-heading genoa-heading">{{ store.headsail.name }}</h3>
+    <h3 class="sail-heading genoa-heading">{{ headsailName() }}</h3>
 
     <div v-for="s in genoaSliders" :key="s.key" class="control-group">
       <label class="control-label">
-        <span class="label-name">{{ s.label }}</span>
+        <span class="label-name">{{ t(`trim.sliders.${s.key}.label`) }}</span>
         <span class="label-value">{{ store.genoaControls[s.key] }}%</span>
       </label>
       <input
@@ -222,7 +174,7 @@ function travelerLabel(v: number): string {
         class="slider"
         :class="s.key"
       />
-      <span class="hint">{{ s.hint }}</span>
+      <span class="hint">{{ t(`trim.sliders.${s.key}.hint`) }}</span>
     </div>
   </section>
 </template>

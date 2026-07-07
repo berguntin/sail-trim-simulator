@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTrimStore } from '../stores/trimStore'
 
+const { t } = useI18n()
 const store = useTrimStore()
 
 const powerClass = computed(() => store.performance.powerBalance)
 
-const powerLabel = computed(() => ({
-  underpowered: '⬇ Underpowered',
-  optimal: '✓ Optimal',
-  overpowered: '⬆ Overpowered',
-}[powerClass.value]))
+const headsailKindName = computed(() => t(`headsail.kind.${store.headsail.kind}`))
+const headsailName = computed(() => `${headsailKindName.value} ${store.headsail.lpPct}%`)
 
 function barWidth(value: number, max = 100): string {
   return `${Math.min(100, (value / max) * 100).toFixed(1)}%`
@@ -28,37 +27,36 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
 
 <template>
   <section class="readout">
-    <h2>Performance Readout</h2>
-    <p class="disclaimer">Speed estimate is qualitative — targets come from the boat's ORC polar.</p>
+    <h2>{{ t('perf.heading') }}</h2>
+    <p class="disclaimer">{{ t('perf.disclaimer') }}</p>
 
     <!-- Power balance badge -->
     <div class="power-badge" :class="powerClass">
-      {{ powerLabel }}
+      {{ t(`perf.badge.${powerClass}`) }}
     </div>
 
     <!-- Sail choice: visible only when a better headsail is available -->
     <p v-if="store.sailChoiceFrac < 0.97" class="sail-note">
-      ⚑ {{ store.headsail.shortName }} gives {{ Math.round(store.sailChoiceFrac * 100) }}%
-      of the best sail's power — see ★ in Boat Model
+      {{ t('perf.sailNote', { sail: headsailKindName, pct: Math.round(store.sailChoiceFrac * 100) }) }}
     </p>
 
     <!-- Polar targets for the selected boat -->
     <div class="targets">
       <div class="targets-title">
-        {{ store.boat.name }} · {{ store.wind.trueWindSpeedKts.toFixed(0) }} kts · TWA {{ store.trueWindAngleDeg.toFixed(0) }}°
+        {{ store.boat.name }} · {{ store.wind.trueWindSpeedKts.toFixed(0) }} {{ t('trim.kts') }} · TWA {{ store.trueWindAngleDeg.toFixed(0) }}°
       </div>
       <table class="num-table">
         <tbody>
           <tr>
-            <td>Est. speed</td>
-            <td class="est-speed">{{ store.estimatedSpeedKts.toFixed(2) }} kn</td>
-            <td>Target</td>
-            <td>{{ store.targets.courseSpeedKts.toFixed(2) }} kn</td>
+            <td>{{ t('perf.estSpeed') }}</td>
+            <td class="est-speed">{{ store.estimatedSpeedKts.toFixed(2) }} {{ t('perf.kn') }}</td>
+            <td>{{ t('perf.target') }}</td>
+            <td>{{ store.targets.courseSpeedKts.toFixed(2) }} {{ t('perf.kn') }}</td>
           </tr>
           <tr>
-            <td>Beat VMG</td>
-            <td>{{ store.targets.beatVMGKts.toFixed(2) }} kn</td>
-            <td>Beat angle</td>
+            <td>{{ t('perf.beatVmg') }}</td>
+            <td>{{ store.targets.beatVMGKts.toFixed(2) }} {{ t('perf.kn') }}</td>
+            <td>{{ t('perf.beatAngle') }}</td>
             <td>{{ store.targets.beatAngleDeg.toFixed(0) }}°</td>
           </tr>
         </tbody>
@@ -69,7 +67,7 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
     <div class="metrics">
       <div class="metric">
         <div class="metric-header">
-          <span class="metric-name">Cl (Rig lift)</span>
+          <span class="metric-name">{{ t('perf.clLift') }}</span>
           <span class="metric-value">{{ store.rigAero.cl.toFixed(3) }}</span>
         </div>
         <div class="bar-track">
@@ -79,7 +77,7 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
 
       <div class="metric">
         <div class="metric-header">
-          <span class="metric-name">Cd (Rig drag)</span>
+          <span class="metric-name">{{ t('perf.cdDrag') }}</span>
           <span class="metric-value">{{ store.rigAero.cd.toFixed(3) }}</span>
         </div>
         <div class="bar-track">
@@ -89,7 +87,7 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
 
       <div class="metric">
         <div class="metric-header">
-          <span class="metric-name">Cl/Cd (Efficiency)</span>
+          <span class="metric-name">{{ t('perf.efficiency') }}</span>
           <span class="metric-value">{{ store.rigAero.efficiency.toFixed(1) }}</span>
         </div>
         <div class="bar-track">
@@ -99,7 +97,7 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
 
       <div class="metric">
         <div class="metric-header">
-          <span class="metric-name">Relative VMG</span>
+          <span class="metric-name">{{ t('perf.relativeVmg') }}</span>
           <span class="metric-value">{{ store.performance.relativeVMG.toFixed(0) }} / 100</span>
         </div>
         <div class="bar-track">
@@ -109,7 +107,7 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
 
       <div class="metric">
         <div class="metric-header">
-          <span class="metric-name">Relative Heel</span>
+          <span class="metric-name">{{ t('perf.relativeHeel') }}</span>
           <span class="metric-value">{{ store.performance.relativeHeel.toFixed(0) }} / 100</span>
         </div>
         <div class="bar-track">
@@ -119,37 +117,37 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
     </div>
 
     <!-- Compact numeric table for quick scanning -->
-    <div class="targets-title">Mainsail</div>
+    <div class="targets-title">{{ t('perf.mainsail') }}</div>
     <table class="num-table">
       <tbody>
         <tr>
-          <td>AoA</td>
+          <td>{{ t('perf.aoa') }}</td>
           <td>{{ store.sailShape.angleOfAttackDeg.toFixed(1) }}°</td>
-          <td>Twist</td>
+          <td>{{ t('perf.twist') }}</td>
           <td>{{ store.sailShape.twistDeg.toFixed(1) }}°</td>
         </tr>
         <tr>
-          <td>Camber</td>
+          <td>{{ t('perf.camber') }}</td>
           <td>{{ (store.sailShape.camberRatio * 100).toFixed(1) }}%</td>
-          <td>Draft pos.</td>
+          <td>{{ t('perf.draftPos') }}</td>
           <td>{{ (store.sailShape.draftPositionRatio * 100).toFixed(0) }}%</td>
         </tr>
       </tbody>
     </table>
 
-    <div class="targets-title">{{ store.headsail.name }}</div>
+    <div class="targets-title">{{ headsailName }}</div>
     <table class="num-table">
       <tbody>
         <tr>
-          <td>AoA</td>
+          <td>{{ t('perf.aoa') }}</td>
           <td>{{ store.genoaShape.angleOfAttackDeg.toFixed(1) }}°</td>
-          <td>Twist</td>
+          <td>{{ t('perf.twist') }}</td>
           <td>{{ store.genoaShape.twistDeg.toFixed(1) }}°</td>
         </tr>
         <tr>
-          <td>Camber</td>
+          <td>{{ t('perf.camber') }}</td>
           <td>{{ (store.genoaShape.camberRatio * 100).toFixed(1) }}%</td>
-          <td>Draft pos.</td>
+          <td>{{ t('perf.draftPos') }}</td>
           <td>{{ (store.genoaShape.draftPositionRatio * 100).toFixed(0) }}%</td>
         </tr>
       </tbody>

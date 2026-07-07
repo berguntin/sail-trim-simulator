@@ -40,11 +40,14 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { useI18n } from 'vue-i18n'
 import { useTrimStore } from '../stores/trimStore'
 import { computeLocalFlow } from '../physics/aerodynamics'
 import { mainBoomAngleDeg } from '../physics/sailShape'
 import { genoaSheetAngleDeg } from '../physics/genoaShape'
 import type { SailShape } from '../physics/types'
+
+const { t } = useI18n()
 
 // ---------------------------------------------------------------------------
 // Sail geometry constants (metres — arbitrary scale for visual)
@@ -1403,32 +1406,32 @@ watch(
 
 <template>
   <section class="viz3d">
-    <h2>Sail Shape — 3D View</h2>
+    <h2>{{ t('viz.heading') }}</h2>
     <div class="canvas-wrap">
       <canvas ref="canvasRef" class="three-canvas" />
-      <div class="overlay-hint">Drag to rotate · Scroll to zoom</div>
+      <div class="overlay-hint">{{ t('viz.hint') }}</div>
       <div class="overlay-stats">
-        <span class="stats-sail">Main</span>
-        <span>Twist <strong>{{ store.sailShape.twistDeg.toFixed(1) }}°</strong></span>
-        <span>AoA <strong>{{ store.sailShape.angleOfAttackDeg.toFixed(1) }}°</strong></span>
-        <span>Camber <strong>{{ (store.sailShape.camberRatio * 100).toFixed(1) }}%</strong></span>
-        <span>Draft <strong>{{ (store.sailShape.draftPositionRatio * 100).toFixed(0) }}%</strong></span>
-        <span v-if="store.sailShape.angleOfAttackDeg < LUFF_ONSET_AOA_DEG" class="stat-luffing">LUFFING</span>
+        <span class="stats-sail">{{ t('viz.main') }}</span>
+        <span>{{ t('viz.twist') }} <strong>{{ store.sailShape.twistDeg.toFixed(1) }}°</strong></span>
+        <span>{{ t('viz.aoa') }} <strong>{{ store.sailShape.angleOfAttackDeg.toFixed(1) }}°</strong></span>
+        <span>{{ t('viz.camber') }} <strong>{{ (store.sailShape.camberRatio * 100).toFixed(1) }}%</strong></span>
+        <span>{{ t('viz.draft') }} <strong>{{ (store.sailShape.draftPositionRatio * 100).toFixed(0) }}%</strong></span>
+        <span v-if="store.sailShape.angleOfAttackDeg < LUFF_ONSET_AOA_DEG" class="stat-luffing">{{ t('viz.luffing') }}</span>
       </div>
       <div class="overlay-stats overlay-stats-genoa">
-        <span class="stats-sail">{{ store.headsail.shortName }}</span>
-        <span>Twist <strong>{{ store.genoaShape.twistDeg.toFixed(1) }}°</strong></span>
-        <span>AoA <strong>{{ store.genoaShape.angleOfAttackDeg.toFixed(1) }}°</strong></span>
-        <span>Camber <strong>{{ (store.genoaShape.camberRatio * 100).toFixed(1) }}%</strong></span>
-        <span>Draft <strong>{{ (store.genoaShape.draftPositionRatio * 100).toFixed(0) }}%</strong></span>
-        <span v-if="store.genoaShape.angleOfAttackDeg < LUFF_ONSET_AOA_DEG" class="stat-luffing">LUFFING</span>
+        <span class="stats-sail">{{ t(`headsail.kind.${store.headsail.kind}`) }}</span>
+        <span>{{ t('viz.twist') }} <strong>{{ store.genoaShape.twistDeg.toFixed(1) }}°</strong></span>
+        <span>{{ t('viz.aoa') }} <strong>{{ store.genoaShape.angleOfAttackDeg.toFixed(1) }}°</strong></span>
+        <span>{{ t('viz.camber') }} <strong>{{ (store.genoaShape.camberRatio * 100).toFixed(1) }}%</strong></span>
+        <span>{{ t('viz.draft') }} <strong>{{ (store.genoaShape.draftPositionRatio * 100).toFixed(0) }}%</strong></span>
+        <span v-if="store.genoaShape.angleOfAttackDeg < LUFF_ONSET_AOA_DEG" class="stat-luffing">{{ t('viz.luffing') }}</span>
       </div>
       <div class="overlay-legend">
-        <span><i class="dot dot-windward" /> windward telltale</span>
-        <span><i class="dot dot-leeward" /> leeward telltale</span>
-        <span><i class="dot dot-leech" /> leech ribbon</span>
-        <span><i class="dot dot-twa" /> true wind (TWA)</span>
-        <span><i class="dot dot-awa" /> apparent wind (AWA)</span>
+        <span><i class="dot dot-windward" /> {{ t('viz.legend.windward') }}</span>
+        <span><i class="dot dot-leeward" /> {{ t('viz.legend.leeward') }}</span>
+        <span><i class="dot dot-leech" /> {{ t('viz.legend.leech') }}</span>
+        <span><i class="dot dot-twa" /> {{ t('viz.legend.twa') }}</span>
+        <span><i class="dot dot-awa" /> {{ t('viz.legend.awa') }}</span>
       </div>
     </div>
   </section>

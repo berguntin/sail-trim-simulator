@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { ref, onBeforeUnmount } from 'vue'
+import { ref, onBeforeUnmount, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import BoatSelector from './BoatSelector.vue'
 import TrimControls from './TrimControls.vue'
 import SailVisualization3D from './SailVisualization3D.vue'
 import PerformanceReadout from './PerformanceReadout.vue'
+import { SUPPORTED_LOCALES, rememberLocale, type AppLocale } from '../i18n'
+
+const { t, locale } = useI18n()
+
+// Selector choices persist (localStorage) and win over browser detection
+watch(locale, (l) => rememberLocale(l as AppLocale))
 
 // Mobile layout: the 3D model fills the screen and the side panels move into
 // a bottom sheet driven by a tab bar. Rendered with v-if (not just CSS) so
@@ -17,17 +24,11 @@ onBeforeUnmount(() => mql.removeEventListener('change', onMqChange))
 type PanelId = 'boat' | 'trim' | 'data'
 const activePanel = ref<PanelId | null>(null)
 
-const panelTabs: { id: PanelId; label: string; icon: string }[] = [
-  { id: 'boat', label: 'Boat', icon: '⛵' },
-  { id: 'trim', label: 'Trim', icon: '🎚' },
-  { id: 'data', label: 'Data', icon: '📊' },
+const panelTabs: { id: PanelId; icon: string }[] = [
+  { id: 'boat', icon: '⛵' },
+  { id: 'trim', icon: '🎚' },
+  { id: 'data', icon: '📊' },
 ]
-
-const panelTitles: Record<PanelId, string> = {
-  boat: 'Boat Model',
-  trim: 'Trim Controls',
-  data: 'Performance',
-}
 
 function togglePanel(id: PanelId) {
   activePanel.value = activePanel.value === id ? null : id
@@ -37,8 +38,13 @@ function togglePanel(id: PanelId) {
 <template>
   <div class="app-shell" :class="{ mobile: isMobile }">
     <header class="app-header">
-      <h1>Sail Trim Simulator</h1>
-      <span class="subtitle">Mainsail + headsail wardrobe · All points of sail · Educational tool</span>
+      <h1>{{ t('app.title') }}</h1>
+      <span class="subtitle">{{ t('app.subtitle') }}</span>
+      <select v-model="locale" class="lang-select" :aria-label="t('app.languageAria')">
+        <option v-for="l in SUPPORTED_LOCALES" :key="l" :value="l">
+          {{ l.toUpperCase() }}
+        </option>
+      </select>
     </header>
 
     <!-- Desktop / tablet: three-column grid -->
@@ -65,8 +71,8 @@ function togglePanel(id: PanelId) {
         <transition name="sheet">
           <div v-if="activePanel" class="sheet">
             <div class="sheet-header">
-              <span class="sheet-title">{{ panelTitles[activePanel] }}</span>
-              <button class="sheet-close" aria-label="Close panel" @click="activePanel = null">✕</button>
+              <span class="sheet-title">{{ t(`app.panels.${activePanel}`) }}</span>
+              <button class="sheet-close" :aria-label="t('app.closePanel')" @click="activePanel = null">✕</button>
             </div>
             <div class="sheet-body">
               <BoatSelector v-if="activePanel === 'boat'" />
@@ -86,13 +92,13 @@ function togglePanel(id: PanelId) {
           @click="togglePanel(tab.id)"
         >
           <span class="tab-icon">{{ tab.icon }}</span>
-          <span class="tab-label">{{ tab.label }}</span>
+          <span class="tab-label">{{ t(`app.tabs.${tab.id}`) }}</span>
         </button>
       </nav>
     </template>
 
     <footer v-if="!isMobile" class="app-footer">
-      Polar targets from ORC certificates (data.orc.org); trim response and speed estimates are qualitative illustrations.
+      {{ t('app.footer') }}
     </footer>
   </div>
 </template>
@@ -126,6 +132,23 @@ h1 {
   font-size: 0.8rem;
   color: var(--color-hint);
   font-style: italic;
+}
+
+.lang-select {
+  margin-left: auto;
+  padding: 0.25rem 0.4rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.app-shell.mobile .lang-select {
+  margin-left: auto;
 }
 
 .app-main {
