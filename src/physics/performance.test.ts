@@ -9,7 +9,7 @@ import {
   trimScore,
   type OptimalRig,
 } from './performance'
-import { computeSailShape } from './sailShape'
+import { computeSailShape, mainBoomAngleDeg } from './sailShape'
 import { computeGenoaShape } from './genoaShape'
 import { computeAeroCoefficients, applyGenoaBlanketing, GENOA_AERO } from './aerodynamics'
 import type { AeroCoefficients, WindState } from './types'
@@ -208,12 +208,19 @@ describe('performance — findOptimalRig realism', () => {
     expect(light.camberRatio).toBeGreaterThan(heavy.camberRatio)
   })
 
-  it('light air optimum carries a fuller genoa than heavy air optimum', () => {
+  it('heavy air optimum depowers the genoa — it cannot be flattened, so it feathers', () => {
+    // Cloth stretch (windStretchCamber) means no control can pull the blown
+    // depth back out of a genoa at 25 kts: the optimum sheds its power by
+    // easing toward luffing instead, generating far less lift than the
+    // powered-up light-air trim. (The full answer on a real boat — change
+    // down to a jib — lives in the headsail wardrobe, boats/headsails.ts.)
     const lightRig = findOptimalRig(windAt(6))
     const heavyRig = findOptimalRig(windAt(25))
     const light = computeGenoaShape(lightRig.genoa, lightRig.main.backstay, windAt(6))
     const heavy = computeGenoaShape(heavyRig.genoa, heavyRig.main.backstay, windAt(25))
-    expect(light.camberRatio).toBeGreaterThan(heavy.camberRatio)
+    const clLight = computeAeroCoefficients(light, windAt(6), GENOA_AERO).cl
+    const clHeavy = computeAeroCoefficients(heavy, windAt(25), GENOA_AERO).cl
+    expect(clHeavy).toBeLessThan(clLight * 0.5)
   })
 
   it('heavy air optimum carries more twist than light air optimum', () => {
@@ -257,29 +264,41 @@ describe('performance — findOptimalRig follows the trim-guide progression', ()
     }
   })
 
-  it('in a breeze the outhaul goes tight — the first depowering step', () => {
-    for (const kts of [18, 21, 24]) {
-      expect(findOptimalRig(windAt(kts)).main.outhaul).toBeGreaterThanOrEqual(75)
+  it('in a breeze the foot boards out flat(ter) — cheap heel shed', () => {
+    // With the emergent-AoA model the sheet/traveler carry real depowering
+    // authority, so the outhaul is no longer forced to do it all — but it
+    // must still tighten as the breeze builds, never ease.
+    const outhaulAt = (kts: number) => findOptimalRig(windAt(kts)).main.outhaul
+    for (const kts of [21, 24]) {
+      expect(outhaulAt(kts)).toBeGreaterThanOrEqual(75)
     }
-  })
-
-  it('the outhaul boards flat before the backstay comes on hard', () => {
-    const main = findOptimalRig(windAt(18)).main
-    expect(main.outhaul).toBe(100)
-    expect(main.backstay).toBeLessThanOrEqual(37.5)
+    expect(outhaulAt(18)).toBeGreaterThanOrEqual(outhaulAt(10))
   })
 
   it('backstay comes on progressively as the breeze builds', () => {
     const backstayAt = (kts: number) => findOptimalRig(windAt(kts)).main.backstay
     expect(backstayAt(12)).toBe(0)
-    expect(backstayAt(21)).toBeGreaterThanOrEqual(50)
-    expect(backstayAt(24)).toBeGreaterThanOrEqual(backstayAt(21))
+    expect(backstayAt(21)).toBeGreaterThanOrEqual(25)
+    expect(backstayAt(24)).toBeGreaterThanOrEqual(Math.max(50, backstayAt(21)))
   })
 
-  it('traveler drops as the wind builds', () => {
-    const travelerAt = (kts: number) => findOptimalRig(windAt(kts)).main.traveler
-    expect(travelerAt(8)).toBeGreaterThanOrEqual(12.5)
-    expect(travelerAt(24)).toBeLessThanOrEqual(-12.5)
+  it('the boom opens (traveler/sheet ease) as the wind builds — feathering', () => {
+    // Sheet and traveler are degenerate in the boom angle, so assert the
+    // physical quantity: the boom rides several degrees wider in a breeze
+    // than in light air (dropping the traveler / cracking the sheet), while
+    // the sail keeps working — AoA stays in the flying range, not luffing.
+    const at = (kts: number) => {
+      const wind = windAt(kts)
+      const main = findOptimalRig(wind).main
+      return {
+        boom: mainBoomAngleDeg(main),
+        aoa: computeSailShape(main, wind).angleOfAttackDeg,
+      }
+    }
+    const light = at(8)
+    const heavy = at(24)
+    expect(heavy.boom).toBeGreaterThanOrEqual(light.boom + 3)
+    expect(heavy.aoa).toBeGreaterThan(8) // feathered, not flogging
   })
 
   it('genoa: the car moves aft and the halyard tension rises in a breeze', () => {

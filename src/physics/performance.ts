@@ -36,7 +36,7 @@ import type {
   BoatTuning,
 } from './types'
 import { computeSailShape } from './sailShape'
-import { computeGenoaShape } from './genoaShape'
+import { computeGenoaShape, DEFAULT_HEADSAIL_TRIM } from './genoaShape'
 import {
   computeAeroCoefficients,
   applyGenoaBlanketing,
@@ -108,6 +108,8 @@ export const DEFAULT_TUNING: BoatTuning = {
   mainAreaFrac: 0.55,
   mainAspectRatio: MAINSAIL_AERO.aspectRatio,
   genoaAspectRatio: GENOA_AERO.aspectRatio,
+  rigPowerFrac: 1,
+  headsail: DEFAULT_HEADSAIL_TRIM,
 }
 
 /** Fill missing tuning fields with the defaults — callers may tune only the
@@ -189,10 +191,14 @@ export function combineRigAero(
   main: AeroCoefficients,
   genoa: AeroCoefficients,
   mainFrac: number = MAIN_AREA_FRAC,
+  rigPowerFrac: number = 1,
 ): AeroCoefficients {
+  // rigPowerFrac references the combined coefficients to the CERTIFICATE
+  // sail plan's area: a smaller headsail produces proportionally less force
+  // (drive and heel alike) than the rated genoa at the same coefficients.
   const genoaFrac = 1 - mainFrac
-  const cl = main.cl * mainFrac + genoa.cl * genoaFrac
-  const cd = main.cd * mainFrac + genoa.cd * genoaFrac
+  const cl = (main.cl * mainFrac + genoa.cl * genoaFrac) * rigPowerFrac
+  const cd = (main.cd * mainFrac + genoa.cd * genoaFrac) * rigPowerFrac
   return { cl, cd, efficiency: cd > 0 ? cl / cd : 0 }
 }
 
@@ -214,7 +220,11 @@ function genoaAeroFor(
   tuning: BoatTuning,
 ): AeroCoefficients {
   return applyGenoaBlanketing(
-    computeAeroCoefficients(computeGenoaShape(genoa, backstay, wind), wind, genoaAeroParams(tuning)),
+    computeAeroCoefficients(
+      computeGenoaShape(genoa, backstay, wind, tuning.headsail),
+      wind,
+      genoaAeroParams(tuning),
+    ),
     wind,
   )
 }
@@ -263,10 +273,13 @@ interface RigGridResult {
 const _gridCache = new Map<string, RigGridResult>()
 
 function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): RigGridResult {
+  const hs = tuning.headsail
   const key =
     `${Math.round(wind.trueWindSpeedKts)}|${wind.apparentWindAngleDeg.toFixed(1)}` +
     `|${tuning.heelComfortFrac.toFixed(3)}|${tuning.mainAreaFrac.toFixed(3)}` +
-    `|${tuning.mainAspectRatio.toFixed(2)}|${tuning.genoaAspectRatio.toFixed(2)}`
+    `|${tuning.mainAspectRatio.toFixed(2)}|${tuning.genoaAspectRatio.toFixed(2)}` +
+    `|${tuning.rigPowerFrac.toFixed(3)}` +
+    `|${hs.camberSlackRatio}|${hs.camberTightRatio}|${hs.minSheetAngleDeg}|${hs.windStretchCamber}`
   const cached = _gridCache.get(key)
   if (cached) return cached
 
@@ -290,7 +303,9 @@ function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): Ri
             for (const outhaul of OUTHAUL_STEPS) {
               const controls = { mainsheet, traveler, cunningham, backstay, outhaul }
               const aero = mainAeroFor(controls, wind, tuning)
-              const score = trimScore(combineRigAero(aero, genoaAero, tuning.mainAreaFrac), wind, tuning)
+              const score = trimScore(
+                combineRigAero(aero, genoaAero, tuning.mainAreaFrac, tuning.rigPowerFrac),
+                wind, tuning)
               if (score > maxScore) {
                 maxScore = score
                 bestMain = controls
@@ -308,7 +323,9 @@ function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): Ri
         for (const halyard of HALYARD_STEPS) {
           const genoa = { jibsheet, car, halyard }
           const genoaAero = genoaAeroFor(genoa, bestMain.backstay, wind, tuning)
-          const score = trimScore(combineRigAero(mainAero, genoaAero, tuning.mainAreaFrac), wind, tuning)
+          const score = trimScore(
+            combineRigAero(mainAero, genoaAero, tuning.mainAreaFrac, tuning.rigPowerFrac),
+            wind, tuning)
           if (score > maxScore) {
             maxScore = score
             bestGenoa = genoa
@@ -322,6 +339,7 @@ function rigGridSearch(wind: WindState, tuning: BoatTuning = DEFAULT_TUNING): Ri
     mainAeroFor(bestMain, wind, tuning),
     genoaAeroFor(bestGenoa, bestMain.backstay, wind, tuning),
     tuning.mainAreaFrac,
+    tuning.rigPowerFrac,
   )
   const result: RigGridResult = {
     maxScore,
@@ -347,6 +365,20 @@ export function findOptimalRig(
   tuning: Partial<BoatTuning> = DEFAULT_TUNING,
 ): OptimalRig {
   return rigGridSearch(wind, resolveTuning(tuning)).best
+}
+
+/**
+ * Best achievable trim score for a wind state and boat tuning — what the
+ * grid search maximises. Comparing this across headsail tunings answers
+ * "which sail should be up right now?": the store uses it to mark the
+ * recommended sail and to discount the speed estimate when the wrong sail
+ * is flying (a heavy jib in 6 kts is slow no matter how well it's trimmed).
+ */
+export function optimalRigScore(
+  wind: WindState,
+  tuning: Partial<BoatTuning> = DEFAULT_TUNING,
+): number {
+  return rigGridSearch(wind, resolveTuning(tuning)).maxScore
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +427,7 @@ export function estimateRigPerformance(
 ): PerformanceEstimate {
   const t = resolveTuning(tuning)
   const grid = rigGridSearch(wind, t)
-  const combined = combineRigAero(mainAero, genoaAero, t.mainAreaFrac)
+  const combined = combineRigAero(mainAero, genoaAero, t.mainAreaFrac, t.rigPowerFrac)
   const score = trimScore(combined, wind, t)
 
   const relativeVMG = grid.maxScore > 0

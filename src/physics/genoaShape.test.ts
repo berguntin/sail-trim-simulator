@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { computeGenoaShape, GENOA_MIN_SHEET_ANGLE_DEG } from './genoaShape'
-import type { GenoaControls, WindState } from './types'
+import {
+  computeGenoaShape,
+  genoaSheetAngleDeg,
+  genoaUpwashDeg,
+  GENOA_MIN_SHEET_ANGLE_DEG,
+  MAX_GENOA_SHEET_ANGLE_DEG,
+  DEFAULT_HEADSAIL_TRIM,
+} from './genoaShape'
+import type { GenoaControls, WindState, HeadsailTrimParams } from './types'
 
 const DEFAULT_WIND: WindState = { trueWindSpeedKts: 12, apparentWindAngleDeg: 30 }
 const NO_BACKSTAY = 0
@@ -19,9 +26,19 @@ describe('genoaShape — angle of attack', () => {
     expect(trimmed.angleOfAttackDeg).toBeGreaterThan(eased.angleOfAttackDeg)
   })
 
-  it('genoa baseline AoA exceeds 35 % of AWA (flies in the main upwash)', () => {
-    const shape = computeGenoaShape(NEUTRAL_CONTROLS, MID_BACKSTAY, DEFAULT_WIND)
-    expect(shape.angleOfAttackDeg).toBeGreaterThan(DEFAULT_WIND.apparentWindAngleDeg * 0.35)
+  it('AoA is emergent: AWA + upwash − sheeted chord angle', () => {
+    const trimmed = computeGenoaShape({ ...NEUTRAL_CONTROLS, jibsheet: 100 }, MID_BACKSTAY, DEFAULT_WIND)
+    const expected =
+      DEFAULT_WIND.apparentWindAngleDeg +
+      genoaUpwashDeg(DEFAULT_WIND.apparentWindAngleDeg) -
+      genoaSheetAngleDeg({ jibsheet: 100 })
+    expect(trimmed.angleOfAttackDeg).toBeCloseTo(expected, 6)
+  })
+
+  it('the main upwash raises the genoa AoA upwind, and dies off the wind', () => {
+    expect(genoaUpwashDeg(28)).toBeGreaterThan(0)
+    expect(genoaUpwashDeg(28)).toBeGreaterThan(genoaUpwashDeg(70))
+    expect(genoaUpwashDeg(110)).toBe(0)
   })
 
   it('lead car does not affect angle of attack', () => {
@@ -32,14 +49,26 @@ describe('genoaShape — angle of attack', () => {
 
   it('winching hard can never rotate the chord inside the lead-track line', () => {
     // The clew hangs on the sheet: a rope pulls, it cannot push the sail
-    // inboard past the car. Chord angle off centreline = AWA − AoA must
-    // stay at or outside the track's sheeting angle however hard you trim.
-    for (const awa of [20, 25, 30, 40]) {
-      const wind: WindState = { trueWindSpeedKts: 12, apparentWindAngleDeg: awa }
-      const hard = computeGenoaShape(
-        { ...NEUTRAL_CONTROLS, jibsheet: 100, car: 0 }, MID_BACKSTAY, wind)
-      expect(awa - hard.angleOfAttackDeg).toBeGreaterThanOrEqual(GENOA_MIN_SHEET_ANGLE_DEG)
+    // inboard past the car — the sheeted chord angle bottoms out at the
+    // track's sheeting angle however hard you trim.
+    for (const jibsheet of [0, 50, 100]) {
+      expect(genoaSheetAngleDeg({ jibsheet })).toBeGreaterThanOrEqual(GENOA_MIN_SHEET_ANGLE_DEG)
     }
+    expect(genoaSheetAngleDeg({ jibsheet: 100 })).toBe(GENOA_MIN_SHEET_ANGLE_DEG)
+  })
+
+  it('eased fully, the clew reaches the rigging stop', () => {
+    expect(genoaSheetAngleDeg({ jibsheet: 0 })).toBe(MAX_GENOA_SHEET_ANGLE_DEG)
+  })
+
+  it('cleated sheet + course change: bearing away raises AoA, heading up backwinds', () => {
+    const cleated = { ...NEUTRAL_CONTROLS, jibsheet: 80 }
+    const aoaAt = (awa: number) =>
+      computeGenoaShape(cleated, MID_BACKSTAY, { trueWindSpeedKts: 12, apparentWindAngleDeg: awa })
+        .angleOfAttackDeg
+    expect(aoaAt(45)).toBeGreaterThan(aoaAt(30))   // bear away → stalls
+    expect(aoaAt(18)).toBeLessThan(aoaAt(30))      // head up → luffs
+    expect(aoaAt(10)).toBeLessThan(0)              // well past head-to-wind: backwinded
   })
 })
 
@@ -145,12 +174,9 @@ describe('genoaShape — off the wind (sheeting limit)', () => {
     expect(hard.angleOfAttackDeg).toBeLessThanOrEqual(90)
   })
 
-  it('the jib sheet has more angle authority on a run than on a beat', () => {
-    const swingAt = (wind: WindState) =>
-      computeGenoaShape({ ...NEUTRAL_CONTROLS, jibsheet: 100 }, MID_BACKSTAY, wind).angleOfAttackDeg -
-      computeGenoaShape({ ...NEUTRAL_CONTROLS, jibsheet: 0 }, MID_BACKSTAY, wind).angleOfAttackDeg
-    // (the 90° AoA clamp and the sheeting-limit floor eat part of the swing)
-    expect(swingAt(RUN_WIND)).toBeGreaterThan(swingAt(DEFAULT_WIND))
+  it('the sheet sweeps the chord across the full track-to-rigging arc', () => {
+    const swing = genoaSheetAngleDeg({ jibsheet: 0 }) - genoaSheetAngleDeg({ jibsheet: 100 })
+    expect(swing).toBe(MAX_GENOA_SHEET_ANGLE_DEG - GENOA_MIN_SHEET_ANGLE_DEG)
   })
 })
 
@@ -177,8 +203,10 @@ describe('genoaShape — output range invariants', () => {
           const s = computeGenoaShape(c, b, w)
           expect(s.twistDeg).toBeGreaterThanOrEqual(5)
           expect(s.twistDeg).toBeLessThanOrEqual(25)
-          expect(s.angleOfAttackDeg).toBeGreaterThanOrEqual(2)
-          expect(s.angleOfAttackDeg).toBeLessThanOrEqual(30)
+          // AoA is emergent: an eased sheet at an upwind AWA legitimately
+          // backwinds the sail (negative AoA, floored at −30)
+          expect(s.angleOfAttackDeg).toBeGreaterThanOrEqual(-30)
+          expect(s.angleOfAttackDeg).toBeLessThanOrEqual(90)
           expect(s.camberRatio).toBeGreaterThanOrEqual(0.05)
           expect(s.camberRatio).toBeLessThanOrEqual(0.18)
           expect(s.draftPositionRatio).toBeGreaterThanOrEqual(0.30)
@@ -189,6 +217,60 @@ describe('genoaShape — output range invariants', () => {
       }
     }
   }
+})
+
+describe('genoaShape — per-headsail characteristics', () => {
+  // A non-overlapping working jib, as boats/headsails.ts derives one
+  const JIB_TRIM: HeadsailTrimParams = {
+    camberSlackRatio: 0.135,
+    camberTightRatio: 0.07,
+    minSheetAngleDeg: 10,
+    windStretchCamber: 0.015,
+  }
+
+  it('default sail params reproduce the historical genoa exactly', () => {
+    const implicit = computeGenoaShape(NEUTRAL_CONTROLS, MID_BACKSTAY, DEFAULT_WIND)
+    const explicit = computeGenoaShape(NEUTRAL_CONTROLS, MID_BACKSTAY, DEFAULT_WIND, DEFAULT_HEADSAIL_TRIM)
+    expect(implicit).toEqual(explicit)
+  })
+
+  it('a flat-cut jib carries less camber than the genoa at every stay tension', () => {
+    for (const backstay of [0, 50, 100]) {
+      const genoa = computeGenoaShape(NEUTRAL_CONTROLS, backstay, DEFAULT_WIND)
+      const jib = computeGenoaShape(NEUTRAL_CONTROLS, backstay, DEFAULT_WIND, JIB_TRIM)
+      expect(jib.camberRatio).toBeLessThan(genoa.camberRatio)
+    }
+  })
+
+  it('a jib swings less between slack and tight stay (less sag-depth to give)', () => {
+    const swingFor = (sail: HeadsailTrimParams) =>
+      computeGenoaShape(NEUTRAL_CONTROLS, 0, DEFAULT_WIND, sail).camberRatio -
+      computeGenoaShape(NEUTRAL_CONTROLS, 100, DEFAULT_WIND, sail).camberRatio
+    expect(swingFor(JIB_TRIM)).toBeLessThan(swingFor(DEFAULT_HEADSAIL_TRIM))
+  })
+
+  it('an inboard-tracked jib sheets closer — higher max AoA at the same AWA', () => {
+    const hardSheet = { ...NEUTRAL_CONTROLS, jibsheet: 100 }
+    const genoa = computeGenoaShape(hardSheet, MID_BACKSTAY, DEFAULT_WIND)
+    const jib = computeGenoaShape(hardSheet, MID_BACKSTAY, DEFAULT_WIND, JIB_TRIM)
+    expect(jib.angleOfAttackDeg).toBeGreaterThan(genoa.angleOfAttackDeg)
+    expect(genoaSheetAngleDeg(hardSheet, JIB_TRIM)).toBe(JIB_TRIM.minSheetAngleDeg)
+  })
+
+  it('cloth stretch blows depth into the sail as the breeze builds — worst on the genoa', () => {
+    const flatTrim = { ...NEUTRAL_CONTROLS }
+    const FULL_BACKSTAY = 100
+    const at = (tws: number, sail: HeadsailTrimParams) =>
+      computeGenoaShape(flatTrim, FULL_BACKSTAY, { trueWindSpeedKts: tws, apparentWindAngleDeg: 30 }, sail)
+        .camberRatio
+    // No control can pull the stretch back out: even at full backstay the
+    // genoa is deeper at 24 kts than at 8 — the reason crews change down
+    expect(at(24, DEFAULT_HEADSAIL_TRIM)).toBeGreaterThan(at(8, DEFAULT_HEADSAIL_TRIM))
+    // and the small flat jib holds its shape far better
+    const genoaStretch = at(24, DEFAULT_HEADSAIL_TRIM) - at(8, DEFAULT_HEADSAIL_TRIM)
+    const jibStretch = at(24, JIB_TRIM) - at(8, JIB_TRIM)
+    expect(jibStretch).toBeLessThan(genoaStretch)
+  })
 })
 
 describe('genoaShape — purity', () => {

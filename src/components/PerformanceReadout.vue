@@ -36,6 +36,12 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
       {{ powerLabel }}
     </div>
 
+    <!-- Sail choice: visible only when a better headsail is available -->
+    <p v-if="store.sailChoiceFrac < 0.97" class="sail-note">
+      ⚑ {{ store.headsail.shortName }} gives {{ Math.round(store.sailChoiceFrac * 100) }}%
+      of the best sail's power — see ★ in Boat Model
+    </p>
+
     <!-- Polar targets for the selected boat -->
     <div class="targets">
       <div class="targets-title">
@@ -131,7 +137,7 @@ const effPct = computed(() => barWidth(store.rigAero.efficiency, 12))
       </tbody>
     </table>
 
-    <div class="targets-title">Genoa</div>
+    <div class="targets-title">{{ store.headsail.name }}</div>
     <table class="num-table">
       <tbody>
         <tr>
@@ -203,6 +209,16 @@ h2 {
   background: rgba(255, 100, 80, 0.18);
   color: #ff7060;
   border: 1px solid #cc4433;
+}
+
+.sail-note {
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.74rem;
+  color: #f0c048;
+  background: rgba(240, 192, 72, 0.10);
+  border: 1px solid rgba(240, 192, 72, 0.35);
+  border-radius: 6px;
 }
 
 .metrics {

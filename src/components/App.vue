@@ -38,7 +38,7 @@ function togglePanel(id: PanelId) {
   <div class="app-shell" :class="{ mobile: isMobile }">
     <header class="app-header">
       <h1>Sail Trim Simulator</h1>
-      <span class="subtitle">Mainsail + Genoa · All points of sail · Educational tool</span>
+      <span class="subtitle">Mainsail + headsail wardrobe · All points of sail · Educational tool</span>
     </header>
 
     <!-- Desktop / tablet: three-column grid -->

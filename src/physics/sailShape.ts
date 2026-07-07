@@ -35,7 +35,7 @@ function norm(value: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Angle of Attack
+// Boom angle & Angle of Attack
 // ---------------------------------------------------------------------------
 
 /**
@@ -48,60 +48,64 @@ function norm(value: number): number {
 export const MAX_BOOM_ANGLE_DEG = 85
 
 /**
- * Compute effective angle of attack (AoA) of the sail vs. apparent wind.
+ * Windward-most boom angle: the traveler hauled fully to windward drags the
+ * boom a few degrees PAST the centreline (negative = boom to windward).
+ */
+export const MIN_BOOM_ANGLE_DEG = -8
+
+/** Traveler authority on the boom angle: ±8° across its ±50 range.
+ *  (Speed & Smarts — "traveler controls mainsail angle without changing
+ *  leech tension"; a full swing moves the boom well past 10° on a keelboat.) */
+const TRAVELER_SWING_DEG = 16
+
+/**
+ * Sheeted boom angle off the centreline, degrees (0 = amidships, positive =
+ * eased to leeward). THIS is what the crew actually sets: sheet and traveler
+ * position the boom relative to the BOAT — the trim knows nothing about the
+ * wind. Fully eased, the sheet lets the boom out to the 85° rigging stop;
+ * block-to-block it holds the boom on the centreline, and the traveler
+ * shifts that whole arc ±8°.
+ */
+export function mainBoomAngleDeg(
+  controls: Pick<TrimControls, 'mainsheet' | 'traveler'>,
+): number {
+  const sheetAngle = (1 - norm(controls.mainsheet)) * MAX_BOOM_ANGLE_DEG
+  const travelerShift = -(normalizeTraveler(controls.traveler) - 0.5) * TRAVELER_SWING_DEG
+  return clamp(sheetAngle + travelerShift, MIN_BOOM_ANGLE_DEG, MAX_BOOM_ANGLE_DEG)
+}
+
+/**
+ * Lower AoA clamp: at −30° the sail is fully backwinded and flogging like a
+ * flag — easing further changes nothing aerodynamically, so deeper negative
+ * angles carry no extra information.
+ */
+export const LUFFING_AOA_FLOOR_DEG = -30
+
+/**
+ * Effective angle of attack (AoA) of the sail vs. apparent wind.
  *
- * Primary driver: traveler (upwind).
- *  - Windward traveler (+50) pulls the boom toward centerline, presenting a
- *    larger angle to the apparent wind → higher AoA.
- *  - Leeward traveler (-50) opens the sail away → lower AoA.
- *  Linear mapping: traveler ±50 → ΔAoA ±8°, centered at a baseline derived
- *  from apparent wind angle. (Source: Speed & Smarts — "traveler controls
- *  mainsail angle without changing leech tension." A full traveler swing
- *  moves the boom well past 10° on a keelboat.)
+ * The AoA is EMERGENT, not directly controlled:
  *
- * Secondary driver: mainsheet.
- *  Easing the sheet opens the boom outward even if the traveler is fixed,
- *  reducing AoA. Upwind the effect is about half the traveler's (the sheet
- *  mostly pulls DOWN at close angles — North U: "sheet tensions the leech;
- *  traveler sets the angle"). As the wind goes aft the sheet is the only
- *  angle control left and a full swing covers tens of degrees, so its
- *  authority scales with AWA (±4° at AWA 30 → ±20° at AWA 150).
+ *   AoA = AWA − boom angle
  *
- * Baseline (mid controls):
- *  - Upwind: ~35 % of AWA (thin-aerofoil optimum for a cambered sail is
- *    5-12°; at AWA ~30° the boom sits ≈ 20° off centreline → AoA ~10°).
- *  - Off the wind the 0.35·AWA rule would need the boom eased past the
- *    rigging: the boom limit binds and the baseline becomes AWA − 80
- *    (mid-controls boom near, not at, the 85° stop).
+ * The controls set the boom angle in the boat's frame (mainBoomAngleDeg);
+ * the wind then meets the sail wherever the wind happens to be. This is the
+ * key realism property: when the course (and therefore the AWA) changes,
+ * the sail does NOT re-trim itself —
+ *  - bear away with the sheets pinned and the AoA grows past stall
+ *    (over-trimmed, dragging, heeling), until the crew eases;
+ *  - head up with the sheets eased and the AoA collapses through zero: the
+ *    wind gets onto the leeward side of the cloth and the sail luffs
+ *    (negative AoA = backwinded, flogging), until the crew trims.
  *
- * Clamps: AoA can never be below AWA − MAX_BOOM (boom against the shrouds)
- * nor above AWA + 5 (boom pinned a touch to windward of centreline); 90° is
- * a fully stalled sail square to the flow.
+ * Clamps: LUFFING_AOA_FLOOR (fully flogging) to 90° (a sail square to the
+ * flow — courses deeper than that present no more cloth to the wind).
  */
 function computeAngleOfAttack(controls: TrimControls, wind: WindState): number {
-  const { mainsheet, traveler } = controls
-  const { apparentWindAngleDeg } = wind
-
-  // Baseline AoA when traveler centered and sheet at 50 %
-  const baseline = Math.max(
-    apparentWindAngleDeg * 0.35,               // upwind regime: ≈ 10-12° at AWA 30°
-    apparentWindAngleDeg - MAX_BOOM_ANGLE_DEG + 5, // boom-limit regime off the wind
-  )
-
-  // Traveler contribution: linear ±8° across full range
-  const travelerNorm = normalizeTraveler(traveler) // 0-1
-  const travelerEffect = (travelerNorm - 0.5) * 16 // ±8°
-
-  // Mainsheet contribution: ±4° upwind, growing with AWA as the sheet
-  // becomes the sole angle control (±20° at AWA 150)
-  const sheetAuthority = clamp(apparentWindAngleDeg / 30, 1, 5)
-  const sheetEffect = (norm(mainsheet) - 0.5) * 8 * sheetAuthority
-
-  const aoa = baseline + travelerEffect + sheetEffect
   return clamp(
-    aoa,
-    Math.max(2, apparentWindAngleDeg - MAX_BOOM_ANGLE_DEG),
-    Math.min(90, apparentWindAngleDeg + 5),
+    wind.apparentWindAngleDeg - mainBoomAngleDeg(controls),
+    LUFFING_AOA_FLOOR_DEG,
+    90,
   )
 }
 

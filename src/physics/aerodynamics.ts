@@ -112,7 +112,9 @@ function baseCl(angleOfAttackDeg: number): number {
   const AoA = angleOfAttackDeg
 
   if (AoA < 5) {
-    // Luffing region: Cl rises from ~0 at AoA=0
+    // Luffing region: Cl rises from ~0 at AoA=0. Negative AoA (backwinded,
+    // flogging cloth — the sheets were left eased and the course closed)
+    // produces no lift at all.
     return clamp(AoA * 0.05, 0, 0.25)
   } else if (AoA <= 20) {
     // Linear region: Cl = 0.25 at 5°, rising to the 1.5 peak at 20°
@@ -265,6 +267,13 @@ function computeCd(shape: SailShape, cl: number, params: SailAeroParams): number
   // and boarding the foot out flat is always worth a token drag saving.
   cd0 += 0.20 * Math.max(0, shape.footFullnessRatio - 0.9) ** 2
 
+  // Flogging drag: below ~2° the entry backwinds and the cloth starts to
+  // flail — a luffing sail is not a clean zero-drag flag, it beats and
+  // bangs and drags the rig through the air. Grows with how far backwinded.
+  if (angleOfAttackDeg < 2) {
+    cd0 += Math.min(0.12, (2 - angleOfAttackDeg) * 0.015)
+  }
+
   // Separation drag: grows quadratically from 12° AoA toward stall, capped
   // at the flat-plate pressure-drag ceiling (CN·sin²α ≈ 1.2 square to the
   // flow) so deep-stall Cd lands where the ORC tables put a run (~1.3).
@@ -366,7 +375,11 @@ export function computeAeroCoefficients(
   wind: WindState,
   params: SailAeroParams = MAINSAIL_AERO,
 ): AeroCoefficients {
-  const clBase = baseCl(shape.angleOfAttackDeg) + camberClDelta(camberForLift(shape))
+  // Camber only converts to lift while the sail is actually flying: fade
+  // its contribution out below the 5° knee so a luffing/backwinded sail
+  // (AoA ≤ 0) carries no camber lift — flogging cloth has no stable shape.
+  const camberFade = clamp(shape.angleOfAttackDeg / 5, 0, 1)
+  const clBase = baseCl(shape.angleOfAttackDeg) + camberClDelta(camberForLift(shape)) * camberFade
   const twistFactor = twistPenaltyFactor(shape.twistDeg, wind.trueWindSpeedKts)
   const cl = clamp(clBase * twistFactor, 0, 2.0)
 

@@ -53,6 +53,13 @@ const specs = computed(() => {
   if (b.upwindSailAreaM2 !== null) parts.push(`${b.upwindSailAreaM2.toFixed(0)} m² upwind`)
   return parts.join(' · ')
 })
+
+/** Measurement line for one wardrobe sail: LP % of J and area when known. */
+function headsailMeta(h: (typeof store.headsails)[number]): string {
+  const parts = [`LP ${Math.round(h.overlapRatio * 100)}% of J`]
+  if (h.areaM2 !== null) parts.push(`${h.areaM2.toFixed(1)} m²`)
+  return parts.join(' · ')
+}
 </script>
 
 <template>
@@ -75,6 +82,33 @@ const specs = computed(() => {
     <p class="boat-desc">{{ store.boat.description }}</p>
     <p v-if="specs" class="boat-specs">{{ specs }}</p>
     <p class="boat-source" :title="store.boat.source">{{ store.boat.source }}</p>
+
+    <h3 class="headsail-heading">Headsail (vela de proa)</h3>
+    <div class="headsail-list" role="radiogroup" aria-label="Headsail">
+      <button
+        v-for="h in store.headsails"
+        :key="h.id"
+        type="button"
+        class="headsail-option"
+        :class="{ active: h.id === store.headsail.id }"
+        role="radio"
+        :aria-checked="h.id === store.headsail.id"
+        :title="h.description"
+        @click="store.selectHeadsail(h.id)"
+      >
+        <span class="headsail-row">
+          <span class="headsail-name">{{ h.name }}</span>
+          <span
+            v-if="h.id === store.recommendedHeadsailId"
+            class="headsail-reco"
+            title="Best sail for the current wind and course"
+          >★ best now</span>
+        </span>
+        <span class="headsail-meta">{{ headsailMeta(h) }}</span>
+        <span class="headsail-desc">{{ h.description }}</span>
+      </button>
+    </div>
+    <span class="hint">Wardrobe derived from the certificate's rated headsail (Area_Jib)</span>
 
     <form class="orc-search" @submit.prevent="onLoadFromOrc">
       <input
@@ -156,6 +190,77 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.headsail-heading {
+  margin: 0.5rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-hint);
+}
+
+.headsail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.headsail-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.headsail-option:hover {
+  border-color: var(--color-accent);
+}
+
+.headsail-option.active {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
+}
+
+.headsail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.headsail-name {
+  font-weight: 600;
+}
+
+.headsail-reco {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #5dd49c;
+  white-space: nowrap;
+}
+
+.headsail-meta {
+  font-size: 0.72rem;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.headsail-desc {
+  font-size: 0.7rem;
+  color: var(--color-hint);
 }
 
 .btn-load {
