@@ -27,9 +27,8 @@ describe('deriveHeadsails — wardrobe composition', () => {
 
     const sails = deriveHeadsails(dufour)
     expect(sails.map((s) => s.id)).toEqual(['certificate', 'working-jib', 'heavy-jib'])
-    expect(sails[0].shortName).toBe('Genoa')
-    expect(sails[1].shortName).toBe('Jib')
-    expect(sails[2].shortName).toBe('Heavy jib')
+    expect(sails.map((s) => s.kind)).toEqual(['genoa', 'jib', 'heavyJib'])
+    expect(sails.map((s) => s.descKey)).toEqual(['ratedGenoa', 'workingJib', 'heavyJib'])
   })
 
   it('blade-jib boat skips the redundant working jib', () => {
@@ -38,7 +37,8 @@ describe('deriveHeadsails — wardrobe composition', () => {
 
     const sails = deriveHeadsails(j80)
     expect(sails.map((s) => s.id)).toEqual(['certificate', 'heavy-jib'])
-    expect(sails[0].shortName).toBe('Jib')
+    expect(sails[0].kind).toBe('jib')
+    expect(sails[0].descKey).toBe('ratedJib')
   })
 
   it('boat without certificate data still gets a full default wardrobe', () => {

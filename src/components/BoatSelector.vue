@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTrimStore } from '../stores/trimStore'
 import { parseBoatFile } from '../boats/parse'
 import { fetchBoatBySailNo } from '../boats/orcApi'
+import type { Headsail } from '../boats/headsails'
 
+const { t } = useI18n()
 const store = useTrimStore()
 const fileError = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -20,7 +23,7 @@ async function onLoadFromOrc() {
     store.addCustomBoat(await fetchBoatBySailNo(orcSailNo.value))
     orcSailNo.value = ''
   } catch (err) {
-    orcError.value = err instanceof Error ? err.message : 'Could not load boat from ORC'
+    orcError.value = err instanceof Error ? err.message : t('boat.orcError')
   } finally {
     orcLoading.value = false
   }
@@ -39,7 +42,7 @@ async function onFile(event: Event) {
     const text = await file.text()
     store.addCustomBoat(parseBoatFile(file.name, text))
   } catch (err) {
-    fileError.value = err instanceof Error ? err.message : 'Could not read file'
+    fileError.value = err instanceof Error ? err.message : t('boat.fileError')
   } finally {
     input.value = '' // allow re-selecting the same file
   }
@@ -54,25 +57,30 @@ const specs = computed(() => {
   return parts.join(' · ')
 })
 
+/** Display name for a wardrobe sail, e.g. "Genoa 138%" / "Génova 138%". */
+function headsailName(h: Headsail): string {
+  return `${t(`headsail.kind.${h.kind}`)} ${h.lpPct}%`
+}
+
 /** Measurement line for one wardrobe sail: LP % of J and area when known. */
-function headsailMeta(h: (typeof store.headsails)[number]): string {
-  const parts = [`LP ${Math.round(h.overlapRatio * 100)}% of J`]
-  if (h.areaM2 !== null) parts.push(`${h.areaM2.toFixed(1)} m²`)
+function headsailMeta(h: Headsail): string {
+  const parts = [t('boat.lpMeta', { pct: h.lpPct })]
+  if (h.areaM2 !== null) parts.push(t('boat.areaMeta', { area: h.areaM2.toFixed(1) }))
   return parts.join(' · ')
 }
 </script>
 
 <template>
   <section class="boat-selector">
-    <h2>Boat Model</h2>
+    <h2>{{ t('boat.heading') }}</h2>
 
     <select class="boat-select" :value="store.boat.id" @change="onSelect">
-      <optgroup label="ORC presets">
+      <optgroup :label="t('boat.presets')">
         <option v-for="b in store.availableBoats.filter((b) => !b.custom)" :key="b.id" :value="b.id">
           {{ b.name }}
         </option>
       </optgroup>
-      <optgroup v-if="store.customBoats.length" label="Your files">
+      <optgroup v-if="store.customBoats.length" :label="t('boat.yourFiles')">
         <option v-for="b in store.customBoats" :key="b.id" :value="b.id">
           {{ b.name }}
         </option>
@@ -83,8 +91,8 @@ function headsailMeta(h: (typeof store.headsails)[number]): string {
     <p v-if="specs" class="boat-specs">{{ specs }}</p>
     <p class="boat-source" :title="store.boat.source">{{ store.boat.source }}</p>
 
-    <h3 class="headsail-heading">Headsail (vela de proa)</h3>
-    <div class="headsail-list" role="radiogroup" aria-label="Headsail">
+    <h3 class="headsail-heading">{{ t('boat.headsailHeading') }}</h3>
+    <div class="headsail-list" role="radiogroup" :aria-label="t('boat.headsailHeading')">
       <button
         v-for="h in store.headsails"
         :key="h.id"
@@ -93,40 +101,40 @@ function headsailMeta(h: (typeof store.headsails)[number]): string {
         :class="{ active: h.id === store.headsail.id }"
         role="radio"
         :aria-checked="h.id === store.headsail.id"
-        :title="h.description"
+        :title="t(`headsail.desc.${h.descKey}`)"
         @click="store.selectHeadsail(h.id)"
       >
         <span class="headsail-row">
-          <span class="headsail-name">{{ h.name }}</span>
+          <span class="headsail-name">{{ headsailName(h) }}</span>
           <span
             v-if="h.id === store.recommendedHeadsailId"
             class="headsail-reco"
-            title="Best sail for the current wind and course"
-          >★ best now</span>
+            :title="t('boat.bestNowTitle')"
+          >{{ t('boat.bestNow') }}</span>
         </span>
         <span class="headsail-meta">{{ headsailMeta(h) }}</span>
-        <span class="headsail-desc">{{ h.description }}</span>
+        <span class="headsail-desc">{{ t(`headsail.desc.${h.descKey}`) }}</span>
       </button>
     </div>
-    <span class="hint">Wardrobe derived from the certificate's rated headsail (Area_Jib)</span>
+    <span class="hint">{{ t('boat.wardrobeHint') }}</span>
 
     <form class="orc-search" @submit.prevent="onLoadFromOrc">
       <input
         v-model="orcSailNo"
         type="text"
         class="orc-input"
-        placeholder="Sail number, e.g. ESP-7352"
+        :placeholder="t('boat.sailNoPlaceholder')"
         :disabled="orcLoading"
-        aria-label="Sail number"
+        :aria-label="t('boat.sailNoAria')"
       />
       <button class="btn-load btn-orc" type="submit" :disabled="orcLoading">
-        {{ orcLoading ? 'Loading…' : 'Load from ORC' }}
+        {{ orcLoading ? t('boat.loading') : t('boat.loadFromOrc') }}
       </button>
     </form>
-    <span class="hint">Fetches the active certificate from data.orc.org</span>
+    <span class="hint">{{ t('boat.orcHint') }}</span>
     <p v-if="orcError" class="file-error">{{ orcError }}</p>
 
-    <button class="btn-load" @click="fileInput?.click()">Load your own polar…</button>
+    <button class="btn-load" @click="fileInput?.click()">{{ t('boat.loadPolar') }}</button>
     <input
       ref="fileInput"
       type="file"
@@ -134,7 +142,7 @@ function headsailMeta(h: (typeof store.headsails)[number]): string {
       class="file-hidden"
       @change="onFile"
     />
-    <span class="hint">ORC certificate JSON (data.orc.org) or polar grid (.pol / .csv)</span>
+    <span class="hint">{{ t('boat.fileHint') }}</span>
     <p v-if="fileError" class="file-error">{{ fileError }}</p>
   </section>
 </template>

@@ -31,15 +31,21 @@ import type { BoatModel } from './types'
 import type { HeadsailTrimParams } from '../physics/types'
 import { deriveRig } from './rig'
 
+/** Sail category — i18n key under `headsail.kind.*` (see src/i18n). */
+export type HeadsailKind = 'genoa' | 'jib' | 'heavyJib'
+
+/** One-line description — i18n key under `headsail.desc.*` (see src/i18n). */
+export type HeadsailDescKey = 'ratedGenoa' | 'ratedJib' | 'workingJib' | 'heavyJib'
+
 export interface Headsail {
   /** Stable id within the wardrobe (also the <select>/button value) */
   id: string
-  /** Display name, e.g. "Genoa 138%" — the percentage is LP/J */
-  name: string
-  /** Short label for stat overlays and table headings */
-  shortName: string
-  /** One-line description shown in the sail picker */
-  description: string
+  /** Sail category; the UI renders it via i18n (`headsail.kind.*`) */
+  kind: HeadsailKind
+  /** LP/J as a display percentage, e.g. 138 — "Genoa 138%" */
+  lpPct: number
+  /** Description i18n key (`headsail.desc.*`) shown in the sail picker */
+  descKey: HeadsailDescKey
   /** Sail area in m², when the certificate area is known */
   areaM2: number | null
   /** Area relative to the certificate's rated headsail, 0-1 */
@@ -119,7 +125,7 @@ export function deriveHeadsails(boat: BoatModel): Headsail[] {
     luffFrac: number,
     clewRise: number,
     heavy: boolean,
-    description: string,
+    descKey: HeadsailDescKey,
   ): Headsail {
     const lpRatio = targetLP / certLP
     // Triangle area ≈ ½ · luff · LP → area scales with both
@@ -128,12 +134,11 @@ export function deriveHeadsails(boat: BoatModel): Headsail[] {
     const aspectRatio = clamp((certAR * luffFrac) / lpRatio, 3.0, 7.5)
     const trim = trimFor(targetLP, heavy)
     const isGenoa = !heavy && targetLP >= GENOA_OVERLAP_MIN
-    const pct = Math.round(targetLP * 100)
     return {
       id,
-      name: `${isGenoa ? 'Genoa' : heavy ? 'Heavy jib' : 'Jib'} ${pct}%`,
-      shortName: isGenoa ? 'Genoa' : heavy ? 'Heavy jib' : 'Jib',
-      description,
+      kind: isGenoa ? 'genoa' : heavy ? 'heavyJib' : 'jib',
+      lpPct: Math.round(targetLP * 100),
+      descKey,
       areaM2: certArea !== null ? certArea * areaRatio : null,
       areaRatio,
       overlapRatio: targetLP,
@@ -146,25 +151,14 @@ export function deriveHeadsails(boat: BoatModel): Headsail[] {
 
   const certIsGenoa = certLP >= GENOA_OVERLAP_MIN
   const sails: Headsail[] = [
-    make(
-      'certificate', certLP, 1, 0, false,
-      certIsGenoa
-        ? 'Rated headsail (génova) — full cut, maximum power, light-medium air'
-        : 'Rated headsail (foque) — non-overlapping blade, flat cut',
-    ),
+    make('certificate', certLP, 1, 0, false, certIsGenoa ? 'ratedGenoa' : 'ratedJib'),
   ]
 
   if (certLP >= WORKING_JIB_MIN_GAP) {
-    sails.push(make(
-      'working-jib', WORKING_JIB_LP, 0.97, 0.10, false,
-      'Working jib (foque) — flatter cut, sheets inboard, for a building breeze',
-    ))
+    sails.push(make('working-jib', WORKING_JIB_LP, 0.97, 0.10, false, 'workingJib'))
   }
 
-  sails.push(make(
-    'heavy-jib', HEAVY_JIB_LP, HEAVY_JIB_LUFF_FRAC, HEAVY_JIB_CLEW_RISE, true,
-    'Heavy-weather jib (foque de tiempo duro) — small, flat, high-clewed',
-  ))
+  sails.push(make('heavy-jib', HEAVY_JIB_LP, HEAVY_JIB_LUFF_FRAC, HEAVY_JIB_CLEW_RISE, true, 'heavyJib'))
 
   return sails
 }
