@@ -18,7 +18,7 @@
  * (mast bend) and the genoa (less headstay sag).
  */
 
-import type { GenoaControls, WindState, SailShape } from './types'
+import type { GenoaControls, WindState, SailShape, HeadsailTrimParams } from './types'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -60,44 +60,77 @@ export const MAX_GENOA_SHEET_ANGLE_DEG = 80
 export const GENOA_MIN_SHEET_ANGLE_DEG = 13
 
 /**
- * Compute effective angle of attack (AoA) of the genoa vs. apparent wind.
- *
- * Primary (and only) driver: jib sheet.
- *  Unlike the main — where traveler and sheet split angle vs. leech duties —
- *  the genoa has ONE line doing everything: sheeting in both closes the angle
- *  to the wind and tensions the leech. (Source: North U — "the jib sheet is
- *  90 % of jib trim.") ±7° upwind; like the mainsheet, its authority grows
- *  as the wind goes aft and the sheet swings through a bigger arc.
- *
- * Baseline: ~40 % of the apparent wind angle, slightly HIGHER than the main's
- * 35 %. The genoa flies in the main's upwash, which locally rotates the flow
- * and raises its effective AoA — the reason the jib can be sheeted closer to
- * centreline without luffing. (Source: Gentry, "The Origins of Lift" and the
- * slot-effect essays.) Off the wind the sheeting limit binds, exactly like
- * the main's boom limit; hard on the wind the INBOARD limit binds instead —
- * the chord can never point inside the lead-track line, so max AoA is
- * AWA − GENOA_MIN_SHEET_ANGLE (winching harder past that only closes the
- * leech — see computeTwist).
+ * Default headsail characteristics — an overlapping genoa, matching the
+ * historical hard-coded coefficients so callers without a sail inventory
+ * (tests, custom polar files) behave exactly as before. Per-sail values
+ * come from the boat's wardrobe (boats/headsails.ts): a jib is cut flatter
+ * and sheets closer inboard than a genoa.
  */
-function computeAngleOfAttack(controls: GenoaControls, wind: WindState): number {
-  const { jibsheet } = controls
-  const { apparentWindAngleDeg } = wind
+export const DEFAULT_HEADSAIL_TRIM: HeadsailTrimParams = {
+  camberSlackRatio: 0.16,
+  camberTightRatio: 0.08,
+  minSheetAngleDeg: GENOA_MIN_SHEET_ANGLE_DEG,
+  windStretchCamber: 0.030,
+}
 
-  // Baseline AoA at sheet = 50 — upwash raises it vs. the main's 0.35
-  const baseline = Math.max(
-    apparentWindAngleDeg * 0.40,
-    apparentWindAngleDeg - MAX_GENOA_SHEET_ANGLE_DEG + 5,
+/**
+ * Sheeted chord angle off the centreline, degrees. The jib sheet is the ONE
+ * line the genoa has: fully eased it lets the clew out to the 80° rigging
+ * limit, fully winched it pulls the chord down onto the lead-track line
+ * (sail.minSheetAngleDeg — a rope can pull, not push, so the chord can never
+ * rotate inside the track; winching past that only tensions the leech, see
+ * computeTwist). Like the main's boom angle, this is set in the BOAT's
+ * frame — the trim knows nothing about the wind.
+ */
+export function genoaSheetAngleDeg(
+  controls: Pick<GenoaControls, 'jibsheet'>,
+  sail: HeadsailTrimParams = DEFAULT_HEADSAIL_TRIM,
+): number {
+  return (
+    sail.minSheetAngleDeg +
+    (1 - norm(controls.jibsheet)) * (MAX_GENOA_SHEET_ANGLE_DEG - sail.minSheetAngleDeg)
   )
+}
 
-  // Sheet contribution: ±7° upwind, growing with AWA
-  const sheetAuthority = clamp(apparentWindAngleDeg / 30, 1, 4)
-  const sheetEffect = (norm(jibsheet) - 0.5) * 14 * sheetAuthority
+/**
+ * Upwash from the main's circulation: the flow arriving at the genoa is
+ * locally rotated a few degrees to windward, raising the genoa's effective
+ * AoA above the geometric AWA − sheet angle — the reason the jib can be
+ * sheeted closer to the centreline than the main without luffing. (Source:
+ * Gentry, "The Origins of Lift" and the slot-effect essays.) Strongest
+ * upwind where the slot works hardest; gone by a beam reach.
+ */
+const UPWASH_MAX_DEG = 4
+export function genoaUpwashDeg(apparentWindAngleDeg: number): number {
+  return UPWASH_MAX_DEG * clamp(1 - (apparentWindAngleDeg - 35) / 65, 0, 1)
+}
 
-  const aoa = baseline + sheetEffect
+/** Lower AoA clamp — fully backwinded, flogging headsail (see sailShape). */
+const LUFFING_AOA_FLOOR_DEG = -30
+
+/**
+ * Effective angle of attack (AoA) of the genoa vs. apparent wind.
+ *
+ * Like the main's, the AoA is EMERGENT, not directly controlled:
+ *
+ *   AoA = AWA + upwash − sheet angle
+ *
+ * The sheet sets the chord angle in the boat's frame (genoaSheetAngleDeg);
+ * the wind then meets the sail wherever the wind happens to be. Change
+ * course with the sheet cleated and the AoA follows the AWA one-for-one:
+ * bear away and the genoa stalls (over-trimmed), head up and it backwinds
+ * and luffs (negative AoA, flogging) until the trimmer reacts.
+ */
+function computeAngleOfAttack(
+  controls: GenoaControls,
+  wind: WindState,
+  sail: HeadsailTrimParams,
+): number {
+  const { apparentWindAngleDeg } = wind
   return clamp(
-    aoa,
-    Math.max(2, apparentWindAngleDeg - MAX_GENOA_SHEET_ANGLE_DEG),
-    Math.min(90, Math.max(2, apparentWindAngleDeg - GENOA_MIN_SHEET_ANGLE_DEG)),
+    apparentWindAngleDeg + genoaUpwashDeg(apparentWindAngleDeg) - genoaSheetAngleDeg(controls, sail),
+    LUFFING_AOA_FLOOR_DEG,
+    90,
   )
 }
 
@@ -157,7 +190,11 @@ function computeTwist(controls: GenoaControls, wind: WindState): number {
  *  out. This is the genoa's equivalent of mast bend. (Source: North U —
  *  "headstay sag is the biggest depth control on the genoa"; Speed & Smarts
  *  headstay-sag issue.)
- *  Slack stay (backstay 0) → camber ≈ 0.16. Tight stay (100) → ≈ 0.08.
+ *  The range is a property of the SAIL, not the rig: slack stay → the sail's
+ *  camberSlackRatio (≈ 0.16 on a full-cut genoa, less on a flat jib), tight
+ *  stay → camberTightRatio (≈ 0.08 genoa, ≈ 0.06 heavy jib). A flat-cut jib
+ *  also swings less between the extremes — its shorter, flatter luff curve
+ *  simply has less sag-depth to give back.
  *
  * Secondary driver: jib sheet.
  *  Sheeting hard bends the clew area flat and stretches the exit of the sail
@@ -166,12 +203,26 @@ function computeTwist(controls: GenoaControls, wind: WindState): number {
  * Secondary driver: halyard.
  *  Like the cunningham on the main: mainly moves the draft, with a small
  *  (−0.01) flattening side effect from redistributing luff cloth.
+ *
+ * Wind-load contribution: cloth stretch blows extra depth into the sail as
+ *  the breeze builds — and no control can pull it back out. The gain is a
+ *  property of the SAIL (windStretchCamber): large + light + full-cut
+ *  stretches most, which is why a genoa that was perfect at 12 kts is a
+ *  dragging bag at 22 and the crew changes down to a jib that holds its
+ *  designed shape. (North U — "when you can no longer flatten the genoa,
+ *  change it"; Speed & Smarts sail-crossover charts.)
  */
-function computeCamber(controls: GenoaControls, backstay: number): number {
+function computeCamber(
+  controls: GenoaControls,
+  backstay: number,
+  wind: WindState,
+  sail: HeadsailTrimParams,
+): number {
   const { jibsheet, halyard } = controls
 
-  // Forestay sag: backstay 0-100 → 0.16 (deep) to 0.08 (flat), linear
-  const camberFromStay = 0.16 - norm(backstay) * 0.08
+  // Forestay sag: backstay 0-100 → camberSlackRatio (deep) to camberTightRatio (flat)
+  const camberFromStay =
+    sail.camberSlackRatio - norm(backstay) * (sail.camberSlackRatio - sail.camberTightRatio)
 
   // Hard sheet stretches the exit flat: ±0.01 around mid-sheet
   const sheetEffect = (norm(jibsheet) - 0.5) * 0.02
@@ -179,7 +230,11 @@ function computeCamber(controls: GenoaControls, backstay: number): number {
   // Halyard secondary flattening: max −0.01
   const halyardEffect = norm(halyard) * 0.01
 
-  const camber = camberFromStay - sheetEffect - halyardEffect
+  // Cloth stretch under load: 0 at 6 kts → windStretchCamber at 25 kts
+  const windStretch =
+    sail.windStretchCamber * clamp((wind.trueWindSpeedKts - 6) / 19, 0, 1)
+
+  const camber = camberFromStay - sheetEffect - halyardEffect + windStretch
   return clamp(camber, 0.05, 0.18)
 }
 
@@ -262,11 +317,12 @@ export function computeGenoaShape(
   controls: GenoaControls,
   backstay: number,
   wind: WindState,
+  sail: HeadsailTrimParams = DEFAULT_HEADSAIL_TRIM,
 ): SailShape {
   return {
-    angleOfAttackDeg: computeAngleOfAttack(controls, wind),
+    angleOfAttackDeg: computeAngleOfAttack(controls, wind, sail),
     twistDeg: computeTwist(controls, wind),
-    camberRatio: computeCamber(controls, backstay),
+    camberRatio: computeCamber(controls, backstay, wind, sail),
     draftPositionRatio: computeDraftPosition(controls, backstay, wind),
     footFullnessRatio: computeFootFullness(controls),
   }

@@ -38,8 +38,12 @@ export interface SailShape {
   twistDeg: number
   /**
    * Effective angle of attack of the sail vs. apparent wind, degrees.
-   * Working range ~5-20°; past stall (boom/sheet limits on deep courses)
-   * it can reach 90° — a sail square to the flow, driving by drag.
+   * EMERGENT, not directly controlled: AoA = AWA − boom/chord angle, where
+   * the trim controls set the boom/chord angle in the BOAT's frame — a wind
+   * shift changes the AoA until the crew re-trims. Working range ~5-20°;
+   * negative (down to −30°) = the sail is backwinded and luffing/flogging;
+   * past stall (boom/sheet limits on deep courses) it can reach 90° — a
+   * sail square to the flow, driving by drag.
    */
   angleOfAttackDeg: number
   /** Camber ratio (depth/chord), 0.05 (flat) to 0.18 (full) */
@@ -62,6 +66,30 @@ export interface AeroCoefficients {
   efficiency: number
 }
 
+export interface HeadsailTrimParams {
+  /**
+   * Camber (depth/chord) with a fully slack forestay (backstay 0). A genoa
+   * is cut full (~0.16); a working jib flatter (~0.135); a heavy-weather
+   * jib flatter still (~0.11).
+   */
+  camberSlackRatio: number
+  /** Camber at maximum forestay tension (backstay 100). */
+  camberTightRatio: number
+  /**
+   * Inboard sheeting limit, degrees off centreline — where the lead track
+   * sits. Non-overlapping jibs sheet inside the shrouds (~10°); an
+   * overlapping genoa's clew must clear the rig (~13°).
+   */
+  minSheetAngleDeg: number
+  /**
+   * Extra camber blown into the sail by cloth stretch at 25 kts TWS (linear
+   * from 6 kts). Scales with sail size and cut: a big light genoa goes deep
+   * just when you want it flat (~0.03) — THE reason crews change down —
+   * while a small heavy-cloth jib barely moves (~0.006).
+   */
+  windStretchCamber: number
+}
+
 export interface BoatTuning {
   /**
    * Fraction (0-1) of the theoretical max heeling force above which the trim
@@ -80,6 +108,15 @@ export interface BoatTuning {
   mainAspectRatio: number
   /** Induced-drag aspect ratio of the jib/genoa (boats/rig.ts). */
   genoaAspectRatio: number
+  /**
+   * Total upwind area of the SELECTED sail plan relative to the certificate
+   * plan (main + rated headsail), 0-1. Scales the combined rig coefficients:
+   * changing down to a smaller jib sheds drive AND heeling force together —
+   * this is what makes a headsail change a depowering step.
+   */
+  rigPowerFrac: number
+  /** Shape characteristics of the selected headsail (boats/headsails.ts). */
+  headsail: HeadsailTrimParams
 }
 
 export interface PerformanceEstimate {

@@ -205,7 +205,7 @@ function travelerLabel(v: number): string {
       <span class="hint">{{ s.hint }}</span>
     </div>
 
-    <h3 class="sail-heading genoa-heading">Genoa (génova)</h3>
+    <h3 class="sail-heading genoa-heading">{{ store.headsail.name }}</h3>
 
     <div v-for="s in genoaSliders" :key="s.key" class="control-group">
       <label class="control-label">

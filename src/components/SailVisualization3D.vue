@@ -42,7 +42,8 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { useTrimStore } from '../stores/trimStore'
 import { computeLocalFlow } from '../physics/aerodynamics'
-import { GENOA_MIN_SHEET_ANGLE_DEG } from '../physics/genoaShape'
+import { mainBoomAngleDeg } from '../physics/sailShape'
+import { genoaSheetAngleDeg } from '../physics/genoaShape'
 import type { SailShape } from '../physics/types'
 
 // ---------------------------------------------------------------------------
@@ -94,9 +95,11 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 function mainChordFoot(): number {
   return CHORD_FOOT * store.rig.mainChordScale
 }
-/** Genoa foot chord from the boat's overlap: LP = overlap × J. */
+/** Headsail foot chord from the SELECTED sail's overlap: LP = overlap × J.
+ *  A 140 % genoa reaches well past the mast; an 85 % heavy jib stops short
+ *  of the forestay-to-mast distance. */
 function genoaChordFoot(): number {
-  return J_LENGTH * store.rig.genoaOverlapRatio
+  return J_LENGTH * store.headsail.overlapRatio
 }
 
 // ---------------------------------------------------------------------------
@@ -190,19 +193,59 @@ function mastBendAt(u: number): number {
   return bow + tipFall
 }
 
+// ---------------------------------------------------------------------------
+// Luffing — a sail whose sheeted angle is wider than the wind can't fill
+// ---------------------------------------------------------------------------
+
+/**
+ * How luffed a sail is, 0-1, from its (emergent) angle of attack: the entry
+ * starts backwinding below ~3°, and by −5° the whole sail is flogging.
+ * Drives both the flap animation amplitude and the overlay badge.
+ */
+const LUFF_ONSET_AOA_DEG = 3
+function luffAmount(aoaDeg: number): number {
+  return Math.min(1, Math.max(0, (LUFF_ONSET_AOA_DEG - aoaDeg) / 8))
+}
+
+/** Render-clock time (seconds) driving the flap wave — set in animate(). */
+let flapT = 0
+
+/** Flap frequency, rad/s: cloth beats faster in more wind. */
+function flapOmegaRad(): number {
+  const windFrac = Math.min(1, Math.max(0, (store.wind.trueWindSpeedKts - 6) / 19))
+  return 6 + windFrac * 9
+}
+
+/**
+ * Flap-wave displacement along the section normal at (u, v) — zero while
+ * the sail is full. Two travelling waves run aft through the cloth (held at
+ * the luff, free at the leech; the foot region is steadied by boom/sheet),
+ * the way a flogging sail beats on a real boat.
+ */
+function flapOffset(luff: number, chord: number, u: number, v: number): number {
+  if (luff <= 0) return 0
+  const w = flapT * flapOmegaRad()
+  const wave =
+    Math.sin(w - v * 7 + u * 3) +
+    0.5 * Math.sin(w * 1.9 - v * 12 + u * 5)
+  return luff * 0.09 * chord * v * (0.25 + 0.75 * u) * wave
+}
+
 /**
  * Angle of the cross-section at height u, measured from the boat centreline
  * (+x) toward leeward (+z), in radians.
  *
- * The apparent wind comes at AWA off the bow; a sail flown at angle-of-attack
- * AoA has its chord (AWA − AoA) off the centreline. Twist opens the upper
- * sections a further twist·u degrees to leeward.
+ * The boom sits where the SHEET and traveler put it (mainBoomAngleDeg) —
+ * in the boat's frame, knowing nothing about the wind. When the sheeted
+ * angle is wider than the AWA the sail can't fill: the cloth weathervanes
+ * and streams along the apparent wind instead (a luffing sail doesn't hold
+ * its trimmed angle). Twist opens the upper sections a further twist·u
+ * degrees to leeward.
  */
 function sectionAngleRad(u: number, shape: SailShape): number {
-  const { angleOfAttackDeg, twistDeg } = shape
   const awa = store.wind.apparentWindAngleDeg
-  const boomAngleDeg = Math.max(2, awa - angleOfAttackDeg)
-  return ((boomAngleDeg + u * twistDeg * TWIST_VIS) * Math.PI) / 180
+  const boomAngleDeg = Math.min(mainBoomAngleDeg(store.controls), awa)
+  return ((boomAngleDeg + u * shape.twistDeg * TWIST_VIS) * Math.PI) / 180
 }
 
 /**
@@ -255,12 +298,17 @@ function sailPoint(u: number, v: number, shape: SailShape): {
     camberCurve(v, shape.draftPositionRatio)
   const bendX = mastBendAt(u) * (1 - v)
 
+  // Luffing: the belly collapses (flogging cloth holds no shape) and the
+  // flap wave beats through what's left, all along the section normal.
+  const luff = luffAmount(shape.angleOfAttackDeg)
+  const normalOffset = camberMag * (1 - 0.8 * luff) + flapOffset(luff, chord, u, v)
+
   return {
     pos: new THREE.Vector3(
-      chordPos * cosA - camberMag * sinA + bendX,
+      chordPos * cosA - normalOffset * sinA + bendX,
       // Foot rides on the boom (BOOM_Y above deck); head stays at the masthead
       BOOM_Y + u * (LUFF_HEIGHT - BOOM_Y),
-      chordPos * sinA + camberMag * cosA,
+      chordPos * sinA + normalOffset * cosA,
     ),
     flowDir: new THREE.Vector3(cosA, 0, sinA),
     leewardNormal: new THREE.Vector3(-sinA, 0, cosA),
@@ -467,10 +515,13 @@ function forestaySagAmount(): number {
   return 0.05 + slack * (0.15 + 0.30 * load)
 }
 
-/** Fraction of the stay the luff spans, stretched by halyard tension. */
+/** Fraction of the stay the luff spans, stretched by halyard tension.
+ *  Scaled by the selected sail's luff length: a heavy-weather jib hoists
+ *  well short of the hounds, leaving bare stay above its head. */
 function genoaHeadFrac(): number {
   const t = store.genoaControls.halyard / 100
-  return GENOA_HEAD_FRAC_MIN + (GENOA_HEAD_FRAC_MAX - GENOA_HEAD_FRAC_MIN) * t
+  return (GENOA_HEAD_FRAC_MIN + (GENOA_HEAD_FRAC_MAX - GENOA_HEAD_FRAC_MIN) * t) *
+    store.headsail.luffFrac
 }
 
 /**
@@ -509,7 +560,8 @@ function genoaClewRise(): number {
   const t = store.genoaControls.car / 100
   const base = GENOA_CLEW_RISE_MIN + (GENOA_CLEW_RISE_MAX - GENOA_CLEW_RISE_MIN) * t
   const sheetPull = (store.genoaControls.jibsheet / 100 - 0.5) * 0.16
-  return base - sheetPull
+  // High-cut sails (heavy-weather jib) carry their clew well above the deck
+  return base - sheetPull + store.headsail.clewRise
 }
 
 /**
@@ -523,12 +575,17 @@ function genoaFootRise(u: number, v: number): number {
 
 /**
  * Section angle of the genoa at height u — same convention as the main:
- * chord flies at (AWA − AoA) off the centreline, twist opens the upper
- * sections a further twist·u degrees to leeward (TWIST_VIS on screen only).
+ * the chord flies where the SHEET puts it (genoaSheetAngleDeg, boat frame),
+ * weathervaning along the AWA when the sheeted angle is wider than the wind
+ * (luffing). Twist opens the upper sections a further twist·u degrees to
+ * leeward (TWIST_VIS on screen only).
  */
 function genoaSectionAngleRad(u: number, shape: SailShape): number {
   const awa = store.wind.apparentWindAngleDeg
-  const chordAngleDeg = Math.max(1, awa - shape.angleOfAttackDeg)
+  const chordAngleDeg = Math.min(
+    genoaSheetAngleDeg(store.genoaControls, store.headsail.trim),
+    awa,
+  )
   return ((chordAngleDeg + u * shape.twistDeg * TWIST_VIS) * Math.PI) / 180
 }
 
@@ -557,12 +614,16 @@ function genoaPoint(u: number, v: number, shape: SailShape): {
   // so the deflection fades toward the leech — like mast bend on the main.
   const sagZ = forestaySagAmount() * 4 * u * (1 - u) * (1 - v)
 
+  // Luffing genoa: belly collapses, flap wave beats through the cloth
+  const luffing = luffAmount(shape.angleOfAttackDeg)
+  const normalOffset = camberMag * (1 - 0.8 * luffing) + flapOffset(luffing, chord, u, v)
+
   const luff = genoaLuffPoint(u)
   return {
     pos: new THREE.Vector3(
-      luff.x + chordPos * cosA - camberMag * sinA,
+      luff.x + chordPos * cosA - normalOffset * sinA,
       luff.y + genoaFootRise(u, v),
-      chordPos * sinA + camberMag * cosA + sagZ,
+      chordPos * sinA + normalOffset * cosA + sagZ,
     ),
     flowDir: new THREE.Vector3(cosA, 0, sinA),
     leewardNormal: new THREE.Vector3(-sinA, 0, cosA),
@@ -672,13 +733,14 @@ function jibTrackX0(): number {
 /**
  * Lateral (athwartships) position of the track: ON the sheeting line the
  * physics enforces — the chord can rotate inboard until the clew sits
- * exactly over the track (AoA capped at AWA − GENOA_MIN_SHEET_ANGLE), and
- * no further. Deriving the track z from the same angle keeps the picture
- * honest: fully winched in, the sheet goes vertical and the clew never
- * crosses inside the lead line (a rope can pull, not push).
+ * exactly over the track (the sail's minSheetAngleDeg), and no further.
+ * Deriving the track z from the same angle keeps the picture honest: fully
+ * winched in, the sheet goes vertical and the clew never crosses inside the
+ * lead line (a rope can pull, not push). Per-sail: a blade jib's track sits
+ * visibly further inboard than a genoa's.
  */
 function jibTrackZ(): number {
-  return genoaChordFoot() * Math.sin((GENOA_MIN_SHEET_ANGLE_DEG * Math.PI) / 180)
+  return genoaChordFoot() * Math.sin((store.headsail.trim.minSheetAngleDeg * Math.PI) / 180)
 }
 
 function initGenoa() {
@@ -1217,7 +1279,13 @@ const clock = new THREE.Clock()
 function animate() {
   animId = requestAnimationFrame(animate)
   controls.update()
-  updateTelltales(clock.getElapsedTime())
+  const t = clock.getElapsedTime()
+  flapT = t
+  // A luffing sail flogs: rebuild the flapping cloth every frame while the
+  // flap wave is live (full sails skip this — geometry updates via watches)
+  if (luffAmount(store.sailShape.angleOfAttackDeg) > 0) updateSailGeometry()
+  if (luffAmount(store.genoaShape.angleOfAttackDeg) > 0) updateGenoaGeometry()
+  updateTelltales(t)
   renderer.render(scene, camera)
 }
 
@@ -1286,10 +1354,19 @@ watch(
 )
 
 // The lead car and halyard can change without changing the genoa shape ranges
-// (the halyard also moves the head up the stay — see genoaHeadFrac)
+// (the halyard also moves the head up the stay — see genoaHeadFrac); the
+// sheet sets the chord angle in the BOAT frame, which the AoA clamps can
+// hide from genoaShape (deep luffing / past-stall)
 watch(
-  () => [store.genoaControls.car, store.genoaControls.halyard],
+  () => [store.genoaControls.car, store.genoaControls.halyard, store.genoaControls.jibsheet],
   () => updateGenoaGeometry(),
+)
+
+// Same for the main: when the AoA clamps bind (fully flogging at −30°, or
+// square to the flow at 90°) the sheet/traveler still move the boom
+watch(
+  () => [store.controls.mainsheet, store.controls.traveler],
+  () => updateSailGeometry(),
 )
 
 watch(
@@ -1315,6 +1392,13 @@ watch(
     updateGenoaGeometry()
   },
 )
+
+// Headsail change: overlap (foot chord), luff span, clew height and the
+// lead track all belong to the selected sail
+watch(
+  () => store.headsailId,
+  () => updateGenoaGeometry(),
+)
 </script>
 
 <template>
@@ -1329,13 +1413,15 @@ watch(
         <span>AoA <strong>{{ store.sailShape.angleOfAttackDeg.toFixed(1) }}°</strong></span>
         <span>Camber <strong>{{ (store.sailShape.camberRatio * 100).toFixed(1) }}%</strong></span>
         <span>Draft <strong>{{ (store.sailShape.draftPositionRatio * 100).toFixed(0) }}%</strong></span>
+        <span v-if="store.sailShape.angleOfAttackDeg < LUFF_ONSET_AOA_DEG" class="stat-luffing">LUFFING</span>
       </div>
       <div class="overlay-stats overlay-stats-genoa">
-        <span class="stats-sail">Genoa</span>
+        <span class="stats-sail">{{ store.headsail.shortName }}</span>
         <span>Twist <strong>{{ store.genoaShape.twistDeg.toFixed(1) }}°</strong></span>
         <span>AoA <strong>{{ store.genoaShape.angleOfAttackDeg.toFixed(1) }}°</strong></span>
         <span>Camber <strong>{{ (store.genoaShape.camberRatio * 100).toFixed(1) }}%</strong></span>
         <span>Draft <strong>{{ (store.genoaShape.draftPositionRatio * 100).toFixed(0) }}%</strong></span>
+        <span v-if="store.genoaShape.angleOfAttackDeg < LUFF_ONSET_AOA_DEG" class="stat-luffing">LUFFING</span>
       </div>
       <div class="overlay-legend">
         <span><i class="dot dot-windward" /> windward telltale</span>
@@ -1421,6 +1507,17 @@ h2 {
   color: var(--color-label);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.stat-luffing {
+  font-weight: 700;
+  color: #e8534a;
+  letter-spacing: 0.06em;
+  animation: luff-blink 1.1s ease-in-out infinite;
+}
+
+@keyframes luff-blink {
+  50% { opacity: 0.35; }
 }
 
 .overlay-legend {

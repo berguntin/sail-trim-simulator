@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { computeSailShape } from './sailShape'
+import {
+  computeSailShape,
+  mainBoomAngleDeg,
+  MAX_BOOM_ANGLE_DEG,
+  MIN_BOOM_ANGLE_DEG,
+} from './sailShape'
 import type { TrimControls, WindState } from './types'
 
 const DEFAULT_WIND: WindState = { trueWindSpeedKts: 12, apparentWindAngleDeg: 30 }
@@ -11,6 +16,18 @@ const NEUTRAL_CONTROLS: TrimControls = {
   backstay: 0,
   outhaul: 50,
 }
+
+describe('sailShape — boom angle (boat frame)', () => {
+  it('the sheet swings the boom through its full arc, independent of the wind', () => {
+    expect(mainBoomAngleDeg({ mainsheet: 0, traveler: 0 })).toBe(MAX_BOOM_ANGLE_DEG)
+    expect(mainBoomAngleDeg({ mainsheet: 100, traveler: 0 })).toBe(0)
+  })
+
+  it('the traveler shifts the boom ±8° and can drag it past the centreline', () => {
+    expect(mainBoomAngleDeg({ mainsheet: 100, traveler: 50 })).toBe(MIN_BOOM_ANGLE_DEG)
+    expect(mainBoomAngleDeg({ mainsheet: 50, traveler: -50 })).toBeCloseTo(42.5 + 8)
+  })
+})
 
 describe('sailShape — angle of attack', () => {
   it('windward traveler (+50) produces higher AoA than centered traveler (0)', () => {
@@ -29,6 +46,28 @@ describe('sailShape — angle of attack', () => {
     const eased = computeSailShape({ ...NEUTRAL_CONTROLS, mainsheet: 0 }, DEFAULT_WIND)
     const trimmed = computeSailShape({ ...NEUTRAL_CONTROLS, mainsheet: 100 }, DEFAULT_WIND)
     expect(trimmed.angleOfAttackDeg).toBeGreaterThan(eased.angleOfAttackDeg)
+  })
+})
+
+describe('sailShape — the wind does not re-trim the sail', () => {
+  // Beat trim: boom ≈ 13° off centreline
+  const BEAT_TRIM: TrimControls = { ...NEUTRAL_CONTROLS, mainsheet: 85 }
+  const aoaAt = (awa: number, controls: TrimControls = BEAT_TRIM) =>
+    computeSailShape(controls, { trueWindSpeedKts: 12, apparentWindAngleDeg: awa }).angleOfAttackDeg
+
+  it('with the controls cleated, the AoA follows the AWA one-for-one', () => {
+    expect(aoaAt(45) - aoaAt(30)).toBeCloseTo(15)
+  })
+
+  it('bearing away with the sheet pinned drives the sail past stall', () => {
+    expect(aoaAt(30)).toBeGreaterThan(5)
+    expect(aoaAt(30)).toBeLessThan(20)      // working range on the beat
+    expect(aoaAt(70)).toBeGreaterThan(35)   // deep stall — no one eased
+  })
+
+  it('heading up with the sheet eased backwinds the sail (negative AoA = luffing)', () => {
+    const eased: TrimControls = { ...NEUTRAL_CONTROLS, mainsheet: 20 } // boom 68°
+    expect(aoaAt(30, eased)).toBeLessThan(0)
   })
 })
 
@@ -136,21 +175,14 @@ describe('sailShape — off the wind (boom limit)', () => {
     expect(eased.angleOfAttackDeg).toBeGreaterThanOrEqual(150 - 85)
   })
 
-  it('AoA never exceeds 90° nor AWA + 5°', () => {
+  it('AoA never exceeds 90° nor AWA − MIN_BOOM (boom pinned to windward)', () => {
     const strangled = computeSailShape(
       { ...NEUTRAL_CONTROLS, mainsheet: 100, traveler: 50 }, RUN_WIND)
     expect(strangled.angleOfAttackDeg).toBeLessThanOrEqual(90)
     const upwind = computeSailShape(
       { ...NEUTRAL_CONTROLS, mainsheet: 100, traveler: 50 },
       { trueWindSpeedKts: 12, apparentWindAngleDeg: 22 })
-    expect(upwind.angleOfAttackDeg).toBeLessThanOrEqual(22 + 5)
-  })
-
-  it('the mainsheet has more angle authority on a run than on a beat', () => {
-    const swingAt = (wind: WindState) =>
-      computeSailShape({ ...NEUTRAL_CONTROLS, mainsheet: 100 }, wind).angleOfAttackDeg -
-      computeSailShape({ ...NEUTRAL_CONTROLS, mainsheet: 0 }, wind).angleOfAttackDeg
-    expect(swingAt(RUN_WIND)).toBeGreaterThan(swingAt(DEFAULT_WIND) * 2)
+    expect(upwind.angleOfAttackDeg).toBeLessThanOrEqual(22 - MIN_BOOM_ANGLE_DEG)
   })
 })
 
@@ -175,8 +207,9 @@ describe('sailShape — output range invariants', () => {
         const s = computeSailShape(c, w)
         expect(s.twistDeg).toBeGreaterThanOrEqual(5)
         expect(s.twistDeg).toBeLessThanOrEqual(25)
-        expect(s.angleOfAttackDeg).toBeGreaterThanOrEqual(2)
-        expect(s.angleOfAttackDeg).toBeLessThanOrEqual(30)
+        // Negative AoA = luffing (eased sheet upwind); floor at −30
+        expect(s.angleOfAttackDeg).toBeGreaterThanOrEqual(-30)
+        expect(s.angleOfAttackDeg).toBeLessThanOrEqual(90)
         expect(s.camberRatio).toBeGreaterThanOrEqual(0.05)
         expect(s.camberRatio).toBeLessThanOrEqual(0.18)
         expect(s.draftPositionRatio).toBeGreaterThanOrEqual(0.30)
