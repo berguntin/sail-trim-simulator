@@ -57,6 +57,8 @@ export default {
 
   trim: {
     heading: 'Trim Controls',
+    conditionsHeading: 'Conditions',
+    anchorHow: 'drag ↕ · wheel to fine-tune',
     trueWindSpeed: 'True Wind Speed',
     kts: 'kts',
     course: 'Course (TWA)',

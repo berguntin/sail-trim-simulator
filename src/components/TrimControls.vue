@@ -1,43 +1,34 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useTrimStore } from '../stores/trimStore'
+import {
+  MAIN_TRIM_SLIDERS,
+  GENOA_TRIM_SLIDERS,
+  type MainControlKey,
+  type GenoaControlKey,
+} from './trimControlDefs'
+
+// horizontal: multi-column band below the 3D model (desktop). Default is the
+// stacked column used inside the mobile bottom sheet.
+// conditionsOnly: only wind / course / optimizer — the sail controls live on
+// the model itself (TrimAnchorOverlay).
+defineProps<{ horizontal?: boolean; conditionsOnly?: boolean }>()
 
 const { t } = useI18n()
 const store = useTrimStore()
 
-interface SliderDef {
-  key: 'mainsheet' | 'traveler' | 'cunningham' | 'backstay' | 'outhaul'
-  min: number
-  max: number
-  step: number
-  unit: string
-}
+// Labels and hints live in the locale files under trim.sliders.<key>;
+// ranges and badge metadata live in trimControlDefs (shared with the
+// on-model anchor overlay)
+const sliders = MAIN_TRIM_SLIDERS
+const genoaSliders = GENOA_TRIM_SLIDERS
 
-interface GenoaSliderDef {
-  key: 'jibsheet' | 'car' | 'halyard'
-}
-
-// Labels and hints live in the locale files under trim.sliders.<key>
-const sliders: SliderDef[] = [
-  { key: 'mainsheet', min: 0, max: 100, step: 1, unit: '%' },
-  { key: 'traveler', min: -50, max: 50, step: 1, unit: '' },
-  { key: 'outhaul', min: 0, max: 100, step: 1, unit: '%' },
-  { key: 'cunningham', min: 0, max: 100, step: 1, unit: '%' },
-  { key: 'backstay', min: 0, max: 100, step: 1, unit: '%' },
-]
-
-const genoaSliders: GenoaSliderDef[] = [
-  { key: 'jibsheet' },
-  { key: 'car' },
-  { key: 'halyard' },
-]
-
-function onChange(key: SliderDef['key'], event: Event) {
+function onChange(key: MainControlKey, event: Event) {
   const value = parseFloat((event.target as HTMLInputElement).value)
   store.setControl(key, value)
 }
 
-function onGenoaChange(key: GenoaSliderDef['key'], event: Event) {
+function onGenoaChange(key: GenoaControlKey, event: Event) {
   const value = parseFloat((event.target as HTMLInputElement).value)
   store.setGenoaControl(key, value)
 }
@@ -74,8 +65,8 @@ function headsailName(): string {
 </script>
 
 <template>
-  <section class="trim-controls">
-    <h2>{{ t('trim.heading') }}</h2>
+  <section class="trim-controls" :class="{ horizontal }">
+    <h2>{{ conditionsOnly ? t('trim.conditionsHeading') : t('trim.heading') }}</h2>
 
     <div class="control-group wind-group">
       <label class="control-label">
@@ -130,9 +121,9 @@ function headsailName(): string {
       </div>
     </div>
 
-    <h3 class="sail-heading">{{ t('trim.mainsail') }}</h3>
+    <h3 v-if="!conditionsOnly" class="sail-heading">{{ t('trim.mainsail') }}</h3>
 
-    <div v-for="s in sliders" :key="s.key" class="control-group">
+    <div v-for="s in conditionsOnly ? [] : sliders" :key="s.key" class="control-group">
       <label class="control-label">
         <span class="label-name">{{ t(`trim.sliders.${s.key}.label`) }}</span>
         <span class="label-value">
@@ -157,9 +148,9 @@ function headsailName(): string {
       <span class="hint">{{ t(`trim.sliders.${s.key}.hint`) }}</span>
     </div>
 
-    <h3 class="sail-heading genoa-heading">{{ headsailName() }}</h3>
+    <h3 v-if="!conditionsOnly" class="sail-heading genoa-heading">{{ headsailName() }}</h3>
 
-    <div v-for="s in genoaSliders" :key="s.key" class="control-group">
+    <div v-for="s in conditionsOnly ? [] : genoaSliders" :key="s.key" class="control-group">
       <label class="control-label">
         <span class="label-name">{{ t(`trim.sliders.${s.key}.label`) }}</span>
         <span class="label-value">{{ store.genoaControls[s.key] }}%</span>
@@ -267,6 +258,11 @@ h2 {
   border-bottom: 1px solid var(--color-border);
 }
 
+/* Conditions-only panel: the optimizer closes the panel, no trailing rule */
+.optimal-row:last-child {
+  border-bottom: none;
+}
+
 .btn-optimal {
   width: 100%;
   padding: 0.5rem 1rem;
@@ -315,5 +311,47 @@ h2 {
   font-size: 0.7rem;
   color: var(--color-hint);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+ * Horizontal band (desktop): sliders flow into columns, headings act as
+ * full-width row separators.
+ * ------------------------------------------------------------------------- */
+
+.trim-controls.horizontal {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.9rem 1.5rem;
+  align-items: start;
+}
+
+.trim-controls.horizontal h2,
+.trim-controls.horizontal .sail-heading {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.trim-controls.horizontal h2 {
+  margin-bottom: -0.25rem;
+}
+
+.trim-controls.horizontal .wind-group {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.trim-controls.horizontal .optimal-row {
+  padding: 0;
+  border-bottom: none;
+}
+
+.trim-controls.horizontal .genoa-heading {
+  padding-top: 0.6rem;
+}
+
+/* The proximity label hangs below the bar; reserve room so it doesn't
+ * overlap the next grid row. */
+.trim-controls.horizontal .proximity-bar-wrap {
+  margin-bottom: 1rem;
 }
 </style>

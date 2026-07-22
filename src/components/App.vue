@@ -47,20 +47,22 @@ function togglePanel(id: PanelId) {
       </select>
     </header>
 
-    <!-- Desktop / tablet: three-column grid -->
+    <!-- Desktop / tablet: model row on top, trim controls in a band below -->
     <main v-if="!isMobile" class="app-main">
-      <aside class="col-controls">
-        <BoatSelector />
-        <TrimControls />
-      </aside>
+      <div class="main-row">
+        <aside class="col-side col-left">
+          <BoatSelector />
+          <TrimControls conditions-only />
+        </aside>
 
-      <section class="col-viz">
-        <SailVisualization3D />
-      </section>
+        <section class="col-viz">
+          <SailVisualization3D trim-anchors />
+        </section>
 
-      <aside class="col-readout">
-        <PerformanceReadout />
-      </aside>
+        <aside class="col-side">
+          <PerformanceReadout />
+        </aside>
+      </div>
     </main>
 
     <!-- Mobile: full-screen 3D model + bottom sheet panels -->
@@ -152,20 +154,25 @@ h1 {
 }
 
 .app-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  flex: 1;
+}
+
+.main-row {
   display: grid;
   grid-template-columns: 280px 1fr 280px;
   gap: 1.25rem;
-  flex: 1;
   align-items: start;
 }
 
-.col-controls,
-.col-readout {
+.col-side {
   position: sticky;
   top: 1rem;
 }
 
-.col-controls {
+.col-left {
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -173,6 +180,13 @@ h1 {
 
 .col-viz {
   min-width: 0;
+}
+
+/* Cap the canvas height so ultrawide viewports don't turn the 4:3 model
+ * into a scroll — the sail controls live on the model, so keeping it fully
+ * on screen is the whole point. */
+.col-viz :deep(.canvas-wrap) {
+  max-height: min(74vh, 820px);
 }
 
 .app-footer {
@@ -185,11 +199,10 @@ h1 {
 }
 
 @media (max-width: 900px) {
-  .app-main {
+  .main-row {
     grid-template-columns: 1fr;
   }
-  .col-controls,
-  .col-readout {
+  .col-side {
     position: static;
   }
   /* Keep the 3D model on top when the columns stack */

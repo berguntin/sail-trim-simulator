@@ -37,7 +37,7 @@
  * track with a car instead of a traveler. Genoa telltales sit close to the
  * luff, where real jib telltales live.
  */
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { useI18n } from 'vue-i18n'
@@ -46,6 +46,12 @@ import { computeLocalFlow } from '../physics/aerodynamics'
 import { mainBoomAngleDeg } from '../physics/sailShape'
 import { genoaSheetAngleDeg } from '../physics/genoaShape'
 import type { SailShape } from '../physics/types'
+import TrimAnchorOverlay from './TrimAnchorOverlay.vue'
+import type { TrimAnchorKey, AnchorScreenPos } from './trimControlDefs'
+
+// trimAnchors: render the on-model trim badges (desktop option 2). The
+// anchor positions are projected from the live geometry every frame.
+const props = defineProps<{ trimAnchors?: boolean }>()
 
 const { t } = useI18n()
 
@@ -1274,6 +1280,86 @@ function updateWindArrows() {
 }
 
 // ---------------------------------------------------------------------------
+// Trim anchor badges — world position of each trim element, projected to
+// canvas pixels every frame so the badges track the model through orbit/zoom
+// ---------------------------------------------------------------------------
+
+const anchorScreen = reactive<Partial<Record<TrimAnchorKey, AnchorScreenPos>>>({})
+const wrapSize = reactive({ w: 0, h: 0 })
+
+/**
+ * Where each control "lives" on the boat: the same formulas updateBoom /
+ * updateGenoaGeometry use to place the hardware, so a badge always sits on
+ * its rope or fitting.
+ */
+function anchorWorldPoints(): Record<TrimAnchorKey, THREE.Vector3> {
+  const shape = store.sailShape
+  const a = sectionAngleRad(0, shape)
+  const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a))
+  const len = boomLen()
+  const chordF = mainChordFoot()
+  const carZ = -(store.controls.traveler / 50) * TRACK_HALF
+
+  // Mainsheet badge at mid-boom: the sheet's attach point and the traveler
+  // car align along the default camera's view ray, so a badge anywhere on
+  // the sheet itself would land on top of the traveler badge
+  const mainsheetPt = new THREE.Vector3(
+    dir.x * len * 0.55, BOOM_Y - 0.12, dir.z * len * 0.55)
+
+  // Backstay badge low on the cable, where the adjuster actually is
+  const masthead = new THREE.Vector3(mastBendAt(1), LUFF_HEIGHT + 0.4, 0)
+  const sternAnchor = new THREE.Vector3(chordF * 1.25, 0, 0)
+  const backstayPt = masthead.lerp(sternAnchor, 0.75)
+
+  const genoaShape = store.genoaShape
+  const gClew = genoaPoint(0, 1, genoaShape).pos
+  const gHead = genoaPoint(1, 0, genoaShape).pos
+  const x0 = jibTrackX0()
+  const trackZ = jibTrackZ()
+  const carX = x0 + (store.genoaControls.car / 100) * JIB_TRACK_LEN
+
+  return {
+    mainsheet: mainsheetPt,
+    traveler: new THREE.Vector3(TRACK_X, 0.06, carZ),
+    outhaul: new THREE.Vector3(dir.x * len, BOOM_Y + 0.05, dir.z * len),
+    cunningham: sailPoint(0.07, 0.03, shape).pos,
+    backstay: backstayPt,
+    jibsheet: gClew,
+    car: new THREE.Vector3(carX, 0.06, trackZ),
+    halyard: gHead.lerp(houndsPoint(), 0.4),
+  }
+}
+
+const projV = new THREE.Vector3()
+
+function updateAnchorScreen() {
+  const wrap = canvasRef.value?.parentElement
+  if (!wrap || !camera) return
+  const w = wrap.clientWidth
+  const h = wrap.clientHeight
+  wrapSize.w = w
+  wrapSize.h = h
+  const pts = anchorWorldPoints()
+  for (const key of Object.keys(pts) as TrimAnchorKey[]) {
+    projV.copy(pts[key]).project(camera)
+    const x = (projV.x * 0.5 + 0.5) * w
+    const y = (-projV.y * 0.5 + 0.5) * h
+    const visible = projV.z < 1 && x > -20 && x < w + 20 && y > -20 && y < h + 20
+    const prev = anchorScreen[key]
+    // Only touch the reactive record when something actually moved — keeps
+    // Vue idle while the camera is still
+    if (
+      !prev ||
+      Math.abs(prev.x - x) > 0.5 ||
+      Math.abs(prev.y - y) > 0.5 ||
+      prev.visible !== visible
+    ) {
+      anchorScreen[key] = { x, y, visible }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Render loop
 // ---------------------------------------------------------------------------
 
@@ -1289,6 +1375,7 @@ function animate() {
   if (luffAmount(store.sailShape.angleOfAttackDeg) > 0) updateSailGeometry()
   if (luffAmount(store.genoaShape.angleOfAttackDeg) > 0) updateGenoaGeometry()
   updateTelltales(t)
+  if (props.trimAnchors) updateAnchorScreen()
   renderer.render(scene, camera)
 }
 
@@ -1409,6 +1496,12 @@ watch(
     <h2>{{ t('viz.heading') }}</h2>
     <div class="canvas-wrap">
       <canvas ref="canvasRef" class="three-canvas" />
+      <TrimAnchorOverlay
+        v-if="props.trimAnchors"
+        :anchors="anchorScreen"
+        :width="wrapSize.w"
+        :height="wrapSize.h"
+      />
       <div class="overlay-hint">{{ t('viz.hint') }}</div>
       <div class="overlay-stats">
         <span class="stats-sail">{{ t('viz.main') }}</span>

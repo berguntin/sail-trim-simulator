@@ -57,6 +57,8 @@ export default {
 
   trim: {
     heading: 'Controles de trimado',
+    conditionsHeading: 'Condiciones',
+    anchorHow: 'arrastra ↕ · rueda para ajuste fino',
     trueWindSpeed: 'Viento real (TWS)',
     kts: 'nudos',
     course: 'Rumbo (TWA)',
