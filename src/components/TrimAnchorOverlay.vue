@@ -200,6 +200,15 @@ function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
 .anchor {
   position: absolute;
   transform: translate(-50%, -50%);
+  z-index: 1;
+}
+
+/* The active anchor (and its tooltip) must paint above sibling badges —
+ * anchors later in the DOM would otherwise cover an earlier tooltip */
+.anchor:hover,
+.anchor:focus-within,
+.anchor.dragging {
+  z-index: 10;
 }
 
 /* -- Badge: progress ring + code ----------------------------------------- */
