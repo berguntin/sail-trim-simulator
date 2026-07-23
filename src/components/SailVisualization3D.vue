@@ -1093,6 +1093,9 @@ function initScene(canvas: HTMLCanvasElement) {
   // camber and the leech line stay visible.
   camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100)
   camera.position.set(9, 11, 12)
+  // Portrait screens crop the stern (and its backstay badge) out of the
+  // frame — start further back so the whole rig fits the narrow view
+  if (w / h < 0.8) camera.position.multiplyScalar(1.3)
   camera.lookAt(1.5, 4, 1)
 
   controls = new OrbitControls(camera, canvas)

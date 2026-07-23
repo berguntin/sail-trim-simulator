@@ -10,12 +10,12 @@ export default {
     languageAria: 'Language',
     tabs: {
       boat: 'Boat',
-      trim: 'Trim',
+      trim: 'Wind',
       data: 'Data',
     },
     panels: {
       boat: 'Boat Model',
-      trim: 'Trim Controls',
+      trim: 'Conditions',
       data: 'Performance',
     },
   },

@@ -10,12 +10,12 @@ export default {
     languageAria: 'Idioma',
     tabs: {
       boat: 'Barco',
-      trim: 'Trimado',
+      trim: 'Viento',
       data: 'Datos',
     },
     panels: {
       boat: 'Modelo de barco',
-      trim: 'Controles de trimado',
+      trim: 'Condiciones',
       data: 'Rendimiento',
     },
   },

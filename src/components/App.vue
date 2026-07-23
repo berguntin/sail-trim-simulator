@@ -26,7 +26,7 @@ const activePanel = ref<PanelId | null>(null)
 
 const panelTabs: { id: PanelId; icon: string }[] = [
   { id: 'boat', icon: '⛵' },
-  { id: 'trim', icon: '🎚' },
+  { id: 'trim', icon: '💨' },
   { id: 'data', icon: '📊' },
 ]
 
@@ -65,10 +65,11 @@ function togglePanel(id: PanelId) {
       </div>
     </main>
 
-    <!-- Mobile: full-screen 3D model + bottom sheet panels -->
+    <!-- Mobile: full-screen 3D model with on-model trim badges + bottom
+         sheet panels (the trim sheet only holds wind/course/optimizer) -->
     <template v-else>
       <main class="mobile-main">
-        <SailVisualization3D />
+        <SailVisualization3D trim-anchors />
 
         <transition name="sheet">
           <div v-if="activePanel" class="sheet">
@@ -78,7 +79,7 @@ function togglePanel(id: PanelId) {
             </div>
             <div class="sheet-body">
               <BoatSelector v-if="activePanel === 'boat'" />
-              <TrimControls v-else-if="activePanel === 'trim'" />
+              <TrimControls v-else-if="activePanel === 'trim'" conditions-only />
               <PerformanceReadout v-else />
             </div>
           </div>

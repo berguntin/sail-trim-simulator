@@ -323,4 +323,23 @@ function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
   opacity: 0.8;
   letter-spacing: 0.03em;
 }
+
+/* Touch screens (and the app's mobile breakpoint): bigger badge targets;
+ * the wheel tip doesn't apply and the tooltip only appears while dragging
+ * (no hover on touch). */
+@media (pointer: coarse), (max-width: 768px) {
+  .badge {
+    width: 44px;
+    height: 44px;
+    padding: 3.5px;
+  }
+
+  .badge-inner {
+    font-size: 0.68rem;
+  }
+
+  .tip-how {
+    display: none;
+  }
+}
 </style>
