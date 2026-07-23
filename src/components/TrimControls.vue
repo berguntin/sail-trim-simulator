@@ -11,7 +11,7 @@ import {
 // horizontal: multi-column band below the 3D model (desktop). Default is the
 // stacked column used inside the mobile bottom sheet.
 // conditionsOnly: only wind / course / optimizer — the sail controls live on
-// the model itself (TrimAnchorOverlay).
+// the canvas itself (TrimDock).
 defineProps<{ horizontal?: boolean; conditionsOnly?: boolean }>()
 
 const { t } = useI18n()

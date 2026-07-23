@@ -56,7 +56,7 @@ function togglePanel(id: PanelId) {
         </aside>
 
         <section class="col-viz">
-          <SailVisualization3D trim-anchors />
+          <SailVisualization3D trim-dock />
         </section>
 
         <aside class="col-side">
@@ -69,7 +69,7 @@ function togglePanel(id: PanelId) {
          sheet panels (the trim sheet only holds wind/course/optimizer) -->
     <template v-else>
       <main class="mobile-main">
-        <SailVisualization3D trim-anchors />
+        <SailVisualization3D trim-dock />
 
         <transition name="sheet">
           <div v-if="activePanel" class="sheet">

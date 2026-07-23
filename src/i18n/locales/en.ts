@@ -81,34 +81,42 @@ export default {
     },
     sliders: {
       mainsheet: {
+        short: 'MS',
         label: 'Mainsheet',
         hint: 'Controls twist (primary) and leech tension',
       },
       traveler: {
+        short: 'TR',
         label: 'Traveler',
         hint: 'Controls angle of attack without changing leech tension',
       },
       outhaul: {
+        short: 'OH',
         label: 'Outhaul',
         hint: 'Foot tension: flattens the lower third of the sail',
       },
       cunningham: {
+        short: 'CU',
         label: 'Cunningham',
         hint: 'Moves draft forward; slightly flattens the sail',
       },
       backstay: {
+        short: 'BS',
         label: 'Backstay',
         hint: 'Bends mast → flattens sail and opens upper leech',
       },
       jibsheet: {
+        short: 'JS',
         label: 'Jib sheet',
         hint: 'Primary genoa control: angle of attack and leech twist',
       },
       car: {
+        short: 'CA',
         label: 'Lead car',
         hint: 'Forward = closed leech, full foot; aft = open leech, flat foot',
       },
       halyard: {
+        short: 'HA',
         label: 'Halyard',
         hint: 'Luff tension: moves the genoa draft forward',
       },

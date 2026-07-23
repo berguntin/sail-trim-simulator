@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * TrimAnchorOverlay — on-model trim controls, direct manipulation.
+ * TrimDock — direct-manipulation trim controls in a row along the bottom
+ * of the 3D canvas, mainsail group left, headsail group right.
  *
- * A badge sits at the projected screen position of each trim element (clew,
- * lead car, halyard, …). The ring around the badge is a progress dial showing
- * the control's setting at a glance. Trimming is direct:
+ * Each badge is a progress dial showing the control's setting at a glance,
+ * with its localized two-letter code inside. Trimming is direct:
  *
  *  - drag the badge vertically (up = trim on, down = ease)
  *  - mouse wheel over the badge for fine adjustment
@@ -13,7 +13,7 @@
  * A non-interactive tooltip with the name, value and hint shows on hover
  * and while dragging.
  */
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTrimStore } from '../stores/trimStore'
 import {
@@ -23,27 +23,24 @@ import {
   type TrimAnchorKey,
   type MainControlKey,
   type GenoaControlKey,
-  type AnchorScreenPos,
 } from './trimControlDefs'
-
-const props = defineProps<{
-  anchors: Partial<Record<TrimAnchorKey, AnchorScreenPos>>
-  width: number
-  height: number
-}>()
 
 const { t } = useI18n()
 const store = useTrimStore()
 
 const defs: TrimSliderDef[] = [...MAIN_TRIM_SLIDERS, ...GENOA_TRIM_SLIDERS]
 
-/** Labels and hints live in the locale files, shared with TrimControls. */
+/** Labels, hints and badge codes live in the locale files. */
 function labelOf(d: TrimSliderDef): string {
   return t(`trim.sliders.${d.key}.label`)
 }
 
 function hintOf(d: TrimSliderDef): string {
   return t(`trim.sliders.${d.key}.hint`)
+}
+
+function shortOf(d: TrimSliderDef): string {
+  return t(`trim.sliders.${d.key}.short`)
 }
 
 function valueOf(d: TrimSliderDef): number {
@@ -73,10 +70,6 @@ function displayValue(d: TrimSliderDef): string {
 function fracOf(d: TrimSliderDef): number {
   return (valueOf(d) - d.min) / (d.max - d.min)
 }
-
-const visibleDefs = computed(() =>
-  defs.filter((d) => props.anchors[d.key]?.visible),
-)
 
 // ---------------------------------------------------------------------------
 // Direct manipulation: vertical pointer drag + wheel + arrow keys
@@ -136,27 +129,15 @@ function onKeydown(d: TrimSliderDef, e: KeyboardEvent) {
     setValue(d, valueOf(d) - step)
   }
 }
-
-/** Flip the tooltip below the badge near the top edge, and keep it inside
- * the canvas laterally. */
-function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
-  const a = props.anchors[d.key]!
-  return {
-    below: a.y < 130,
-    'edge-left': a.x < 130,
-    'edge-right': a.x > props.width - 130,
-  }
-}
 </script>
 
 <template>
-  <div class="anchor-layer">
+  <div class="trim-dock">
     <div
-      v-for="d in visibleDefs"
+      v-for="d in defs"
       :key="d.key"
-      class="anchor"
-      :class="[d.sail, { dragging: dragging === d.key }]"
-      :style="{ left: `${anchors[d.key]!.x}px`, top: `${anchors[d.key]!.y}px` }"
+      class="dock-item"
+      :class="[d.sail, { dragging: dragging === d.key, 'group-start': d.key === 'jibsheet' }]"
     >
       <button
         class="badge"
@@ -174,10 +155,10 @@ function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
         @wheel="(e) => onWheel(d, e)"
         @keydown="(e) => onKeydown(d, e)"
       >
-        <span class="badge-inner">{{ d.short }}</span>
+        <span class="badge-inner">{{ shortOf(d) }}</span>
       </button>
 
-      <div class="tooltip" :class="tooltipClass(d)">
+      <div class="tooltip">
         <div class="tip-label">
           <span class="tip-name">{{ labelOf(d) }}</span>
           <span class="tip-value">{{ displayValue(d) }}</span>
@@ -190,35 +171,46 @@ function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
 </template>
 
 <style scoped>
-.anchor-layer {
+.trim-dock {
   position: absolute;
-  inset: 0;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 12px);
   pointer-events: none;
   z-index: 5;
 }
 
-.anchor {
+.dock-item {
+  position: relative;
+}
+
+/* Divider between the mainsail and headsail groups */
+.dock-item.group-start {
+  margin-left: 14px;
+}
+
+.dock-item.group-start::before {
+  content: '';
   position: absolute;
-  transform: translate(-50%, -50%);
-  z-index: 1;
+  left: -13px;
+  top: 15%;
+  bottom: 15%;
+  width: 1px;
+  background: var(--color-border);
 }
 
-/* The active anchor (and its tooltip) must paint above sibling badges —
- * anchors later in the DOM would otherwise cover an earlier tooltip */
-.anchor:hover,
-.anchor:focus-within,
-.anchor.dragging {
-  z-index: 10;
-}
-
-/* -- Badge: progress ring + code ----------------------------------------- */
+/* -- Badge: progress ring + localized code -------------------------------- */
 
 .badge {
   --ring: var(--color-accent);
   pointer-events: auto;
   display: block;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   padding: 3px;
   border: none;
   border-radius: 50%;
@@ -232,14 +224,14 @@ function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
   transition: transform 0.12s ease;
 }
 
-.anchor.genoa .badge {
+.dock-item.genoa .badge {
   --ring: #e8c476;
 }
 
 .badge:hover,
 .badge:focus-visible,
-.anchor.dragging .badge {
-  transform: scale(1.18);
+.dock-item.dragging .badge {
+  transform: scale(1.15);
   outline: none;
 }
 
@@ -252,7 +244,7 @@ function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
   border-radius: 50%;
   background: rgba(10, 24, 38, 0.92);
   color: var(--color-text);
-  font-size: 0.6rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   pointer-events: none;
@@ -277,26 +269,10 @@ function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);
 }
 
-.anchor:hover .tooltip,
-.anchor:focus-within .tooltip,
-.anchor.dragging .tooltip {
+.dock-item:hover .tooltip,
+.dock-item:focus-within .tooltip,
+.dock-item.dragging .tooltip {
   display: flex;
-}
-
-.tooltip.below {
-  bottom: auto;
-  top: calc(100% + 8px);
-}
-
-.tooltip.edge-left {
-  left: -14px;
-  transform: none;
-}
-
-.tooltip.edge-right {
-  left: auto;
-  right: -14px;
-  transform: none;
 }
 
 .tip-label {
@@ -333,22 +309,45 @@ function tooltipClass(d: TrimSliderDef): Record<string, boolean> {
   letter-spacing: 0.03em;
 }
 
-/* Touch screens (and the app's mobile breakpoint): bigger badge targets;
- * the wheel tip doesn't apply and the tooltip only appears while dragging
- * (no hover on touch). */
+/* Touch screens (and the app's mobile breakpoint): the dock spans nearly
+ * the full width, so badges tighten up; the wheel tip doesn't apply and the
+ * tooltip only appears while dragging (no hover on touch). The canvas edge
+ * clips centered tooltips of the outermost badges — pin them inward. */
 @media (pointer: coarse), (max-width: 768px) {
+  .trim-dock {
+    gap: 4px;
+  }
+
+  .dock-item.group-start {
+    margin-left: 11px;
+  }
+
+  .dock-item.group-start::before {
+    left: -8px;
+  }
+
   .badge {
-    width: 44px;
-    height: 44px;
-    padding: 3.5px;
+    width: 40px;
+    height: 40px;
   }
 
   .badge-inner {
-    font-size: 0.68rem;
+    font-size: 0.66rem;
   }
 
   .tip-how {
     display: none;
+  }
+
+  .dock-item:nth-child(-n+2) .tooltip {
+    left: -8px;
+    transform: none;
+  }
+
+  .dock-item:nth-last-child(-n+2) .tooltip {
+    left: auto;
+    right: -8px;
+    transform: none;
   }
 }
 </style>

@@ -81,34 +81,42 @@ export default {
     },
     sliders: {
       mainsheet: {
+        short: 'EM',
         label: 'Escota de mayor',
         hint: 'Controla el twist (principal) y la tensión de baluma',
       },
       traveler: {
+        short: 'CM',
         label: 'Carro de mayor',
         hint: 'Controla el ángulo de ataque sin cambiar la tensión de baluma',
       },
       outhaul: {
+        short: 'PJ',
         label: 'Pajarín',
         hint: 'Tensión del pujamen: aplana el tercio bajo de la vela',
       },
       cunningham: {
+        short: 'CU',
         label: 'Cunningham',
         hint: 'Adelanta la bolsa; aplana ligeramente la vela',
       },
       backstay: {
+        short: 'BS',
         label: 'Backstay',
         hint: 'Curva el mástil → aplana la vela y abre la baluma alta',
       },
       jibsheet: {
+        short: 'ES',
         label: 'Escota',
         hint: 'Control principal del génova: ángulo de ataque y twist de baluma',
       },
       car: {
+        short: 'CE',
         label: 'Carro de escota',
         hint: 'Adelante = baluma cerrada, pujamen lleno; atrás = baluma abierta, pujamen plano',
       },
       halyard: {
+        short: 'DZ',
         label: 'Driza',
         hint: 'Tensión del gratil: adelanta la bolsa del génova',
       },
